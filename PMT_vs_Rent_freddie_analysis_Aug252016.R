@@ -12,54 +12,7 @@ library(plotly)
 setwd("E:/strategic_default")
 source("functions.R")
 
-temp<-read.table("PMT_vs_Rent_freddie_cox_sample_Aug23016_0pct.csv", sep = "|",header=TRUE,quote = "", row.names = NULL, stringsAsFactors = FALSE)
-temp['ne_cutoff']<-"zero"
-deldata<-temp
-
-temp<-read.table("PMT_vs_Rent_freddie_cox_sample_Aug23016_20pct.csv", sep = "|",header=TRUE,quote = "", row.names = NULL, stringsAsFactors = FALSE)
-temp['ne_cutoff']<-"twenty"
-deldata<-rbind(deldata,temp)
-
-temp<-read.table("PMT_vs_Rent_freddie_cox_sample_Aug23016_50pct.csv", sep = "|",header=TRUE,quote = "", row.names = NULL, stringsAsFactors = FALSE)
-temp['ne_cutoff']<-"fifty"
-deldata<-rbind(deldata,temp)
-
-deldata['ne_year']<- format(as.Date(deldata$reportingperiod_t),'%Y')
-deldata['ne_date']<- as.Date(deldata$reportingperiod_t)
-
-judicial=c('CT','DE','FL','IL','IN','IA','KS','KY','LA','MA','MD','ME','NJ','NM','NY','ND','OH','OK','PA','SC','SD','VT','WI')
-nonrecourse=c('AK','AZ','CA','IA','MN','MT','NC','ND','OR','WA','WI')
-
-deldata['judicial']<-ifelse(deldata$state %in% judicial,1,0)
-deldata['recourse']<-ifelse(deldata$state %in% nonrecourse,0,1)
-
-unemp <- readRDS("zipunemp.rds")
-names(unemp)<-c("reportingperiod_t","zip","del_unemp")
-deldata$reportingperiod_t <- as.Date(deldata$reportingperiod_t)
-deldata <- merge(deldata,unemp,by=c("reportingperiod_t","zip"),all.x = TRUE)
-unemp<-NULL
-
-lardata <-readRDS("censusdata_zip_Aug232016.rds")
-lardata$zip <- lardata$zip*100
-medgrossrent <- ddply(lardata,.(zip,year),summarise,medgrossrent=mean(medgrossrent,na.rm = TRUE))
-
-
-deldata['year']<-format(as.Date(deldata$orgdate),'%Y')
-deldata <- merge(deldata,lardata,by=c("year","zip"),all.x = TRUE)
-
-deldata$current_equity <- ifelse(is.infinite(deldata$current_equity),NA,deldata$current_equity)
-
-deldata['mpay']<-apply(deldata[,c('upb','interestrate','loanterm')],1,function(x) mortgage(x['upb'],x['interestrate'],x['loanterm']))
-deldata['mpay_rent']<-deldata$mpay/deldata$medgrossrent
-deldata['mpay_std']<-(deldata$mpay - mean(deldata$mpay,na.rm=TRUE))/sd(deldata$mpay,na.rm = TRUE)
-
-deldata['mpay_rent_q']<-ifelse(deldata$mpay_rent<quantile(deldata$mpay_rent,0.2,na.rm=TRUE),1,
-                               ifelse(deldata$mpay_rent<quantile(deldata$mpay_rent,0.4,na.rm=TRUE),2,
-                                      ifelse(deldata$mpay_rent<quantile(deldata$mpay_rent,0.6,na.rm=TRUE),3,
-                                             ifelse(deldata$mpay_rent<quantile(deldata$mpay_rent,0.8,na.rm=TRUE),4,
-                                                    ifelse(deldata$mpay_rent<max(deldata$mpay_rent,na.rm=TRUE),5,NA)))))
-
-saveRDS(deldata,file="deldata.rds")
+deldata <-readRDS("deldata.rds")
 
 # PMT_RENT_ne_pct.pdf -----------------------------------------------------
 loan_df_sum <- readRDS("loan_df_sum.rds")
