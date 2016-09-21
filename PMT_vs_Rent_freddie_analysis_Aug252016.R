@@ -12,7 +12,56 @@ library(plotly)
 setwd("E:/strategic_default")
 source("functions.R")
 
-deldata <-readRDS("deldata.rds")
+# temp<-read.table("PMT_vs_Rent_freddie_cox_sample_Aug23016_0pct.csv", sep = "|",header=TRUE,quote = "", row.names = NULL, stringsAsFactors = FALSE)
+# temp['ne_cutoff']<-"zero"
+# deldata<-temp
+# 
+# temp<-read.table("PMT_vs_Rent_freddie_cox_sample_Aug23016_20pct.csv", sep = "|",header=TRUE,quote = "", row.names = NULL, stringsAsFactors = FALSE)
+# temp['ne_cutoff']<-"twenty"
+# deldata<-rbind(deldata,temp)
+# 
+# temp<-read.table("PMT_vs_Rent_freddie_cox_sample_Aug23016_50pct.csv", sep = "|",header=TRUE,quote = "", row.names = NULL, stringsAsFactors = FALSE)
+# temp['ne_cutoff']<-"fifty"
+# deldata<-rbind(deldata,temp)
+# 
+# deldata['ne_year']<- format(as.Date(deldata$reportingperiod_t),'%Y')
+# deldata['ne_date']<- as.Date(deldata$reportingperiod_t)
+# 
+# judicial=c('CT','DE','FL','IL','IN','IA','KS','KY','LA','MA','MD','ME','NJ','NM','NY','ND','OH','OK','PA','SC','SD','VT','WI')
+# nonrecourse=c('AK','AZ','CA','IA','MN','MT','NC','ND','OR','WA','WI')
+# 
+# deldata['judicial']<-ifelse(deldata$state %in% judicial,1,0)
+# deldata['recourse']<-ifelse(deldata$state %in% nonrecourse,0,1)
+# 
+# unemp <- readRDS("zipunemp.rds")
+# names(unemp)<-c("reportingperiod_t","zip","del_unemp")
+# deldata$reportingperiod_t <- as.Date(deldata$reportingperiod_t)
+# deldata <- merge(deldata,unemp,by=c("reportingperiod_t","zip"),all.x = TRUE)
+# unemp<-NULL
+# 
+# lardata <-readRDS("censusdata_zip_Aug232016.rds")
+# lardata$zip <- lardata$zip*100
+# medgrossrent <- ddply(lardata,.(zip,year),summarise,medgrossrent=mean(medgrossrent,na.rm = TRUE))
+# 
+# 
+# deldata['year']<-format(as.Date(deldata$orgdate),'%Y')
+# deldata <- merge(deldata,lardata,by=c("year","zip"),all.x = TRUE)
+# 
+# deldata$current_equity <- ifelse(is.infinite(deldata$current_equity),NA,deldata$current_equity)
+# 
+# deldata['mpay']<-apply(deldata[,c('upb','interestrate','loanterm')],1,function(x) mortgage(x['upb'],x['interestrate'],x['loanterm']))
+# deldata['mpay_rent']<-deldata$mpay/deldata$medgrossrent
+# deldata['mpay_std']<-(deldata$mpay - mean(deldata$mpay,na.rm=TRUE))/sd(deldata$mpay,na.rm = TRUE)
+# 
+# deldata['mpay_rent_q']<-ifelse(deldata$mpay_rent<quantile(deldata$mpay_rent,0.2,na.rm=TRUE),1,
+#                                ifelse(deldata$mpay_rent<quantile(deldata$mpay_rent,0.4,na.rm=TRUE),2,
+#                                       ifelse(deldata$mpay_rent<quantile(deldata$mpay_rent,0.6,na.rm=TRUE),3,
+#                                              ifelse(deldata$mpay_rent<quantile(deldata$mpay_rent,0.8,na.rm=TRUE),4,
+#                                                     ifelse(deldata$mpay_rent<max(deldata$mpay_rent,na.rm=TRUE),5,NA)))))
+# 
+# saveRDS(deldata,file="deldata.rds")
+
+deldata <- readRDS("deldata.rds")
 
 # PMT_RENT_ne_pct.pdf -----------------------------------------------------
 loan_df_sum <- readRDS("loan_df_sum.rds")
@@ -409,3 +458,25 @@ cox<-list()
 cox[[1]]<-coxph(Surv(duration,def)~mpay_zillow_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = deldata_zillow[deldata_zillow$recourse==0 & deldata_zillow$ne_cutoff=="zero",])
 cox[[2]]<-coxph(Surv(duration,def)~mpay_zillow_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = deldata_zillow[deldata_zillow$recourse==1 & deldata_zillow$ne_cutoff=="zero",])
 stargazer(cox,out='PMTRent_01_cox_zillow.htm',column.labels=c('Non-Recourse','Recourse'), omit = c("state","ne_year","loanpurpose","occupancy"),omit.labels = c("State","Year","",""))
+
+median_mpay_zillow <- ddply(deldata_zillow,.(ne_year,ne_cutoff,recourse,state,zip),summarise,
+                     def=mean(def,na.rm = TRUE),
+                     median_mpay_rent = (median(mpay,na.rm = TRUE)/median(rent,na.rm = TRUE)),
+                     fico = median(fico,na.rm = TRUE),
+                     ltv = median(ltv,na.rm = TRUE),
+                     dti = median(dti,na.rm = TRUE),
+                     upb = median(upb,na.rm = TRUE),
+                     medhhincome = median(medhhincome,na.rm = TRUE),
+                     medhouseage = median(medhouseage,na.rm = TRUE),
+                     vacantpct = median(vacantpct,na.rm = TRUE),
+                     bachelorpct = median(bachelorpct,na.rm = TRUE),
+                     withsalarypct = median(withsalarypct,na.rm = TRUE))
+
+
+ols <- list()
+ols[[1]]<-lm(def~median_mpay_rent+factor(ne_cutoff),data=median_mpay_zillow)
+ols[[2]]<-lm(def~median_mpay_rent+factor(ne_cutoff)+factor(recourse)+log(upb)+factor(ne_year)+factor(state),data=median_mpay_zillow)
+ols[[3]]<-lm(def~median_mpay_rent+factor(ne_cutoff)+factor(recourse)+factor(ne_year)+fico+ltv+dti+
+               log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state),data=median_mpay_zillow)
+stargazer(ols,out='PMTRent_rent_zip_median_zillow.htm', omit = c("state","ne_year"),omit.labels = c("State","Year"))
+
