@@ -1,0 +1,122 @@
+---
+title: "zillow_mpay_rent"
+author: "Dimuthu Ratnadiwakara"
+date: "September 27, 2016"
+output: 
+  html_document: 
+    theme: journal
+---
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+rm(list=ls())
+library(data.table)
+library(zoo)
+library(sqldf)
+library(stargazer)
+library(survival)
+library(reshape2)
+setwd("E:/strategic_default")
+source("functions.R")
+
+zillowdata <- readRDS("zillow_data.rds")
+```
+
+```{r}
+summary(zillowdata$mpay)
+summary(zillowdata$rent)
+summary(zillowdata$mpay_zillow_rent)
+hist(zillowdata$mpay_zillow_rent)
+
+```
+
+
+```{r}
+mpay_defpct <- ddply(zillowdata, .(recourse,ne_cutoff,mpay_zillow_rent_q),summarise,default=mean(def))
+mpay_defpct <- mpay_defpct[!is.na(mpay_defpct$mpay_zillow_rent_q),]
+mpay_defpct<-melt(mpay_defpct,id=c("recourse", "ne_cutoff","mpay_zillow_rent_q"), measured=c("default"))
+mpay_defpct<-dcast(mpay_defpct, mpay_zillow_rent_q~ne_cutoff+recourse)
+mpay_defpct
+```
+
+```{r}
+cox<-list()
+
+cox[[1]]<-coxph(Surv(duration,def)~mpay_zillow_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = zillowdata[zillowdata$recourse==0 & zillowdata$ne_cutoff=="zero",])
+
+cox[[2]]<-coxph(Surv(duration,def)~mpay_zillow_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = zillowdata[zillowdata$recourse==1 & zillowdata$ne_cutoff=="zero",])
+
+cox[[3]]<-coxph(Surv(duration,def)~mpay_zillow_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = zillowdata[zillowdata$recourse==0 & zillowdata$ne_cutoff=="twenty",])
+
+cox[[4]]<-coxph(Surv(duration,def)~mpay_zillow_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = zillowdata[zillowdata$recourse==1 & zillowdata$ne_cutoff=="twenty",])
+
+stargazer(cox,column.labels=c('Non-Recourse','Recourse'), omit = c("state","ne_year","loanpurpose","occupancy"),omit.labels = c("State","Year","",""),type = "text")
+
+```
+
+```{r}
+median_housevalue <- ddply(zillowdata,.(ne_year,zip),summarise,median_housevalue=median(current_housevalue,na.rm = TRUE))
+
+zillowdata <- merge(zillowdata,median_housevalue, by=c("ne_year","zip"))
+
+zillowdata['adjusted_rent'] <- zillowdata$rent*zillowdata$current_housevalue/zillowdata$median_housevalue
+
+zillowdata['adjusted_mpay_rent'] <- zillowdata$mpay/zillowdata$adjusted_rent
+
+summary(zillowdata$adjusted_mpay_rent)
+summary(zillowdata$mpay_zillow_rent/zillowdata$adjusted_mpay_rent)
+
+cox<-list()
+
+cox[[1]]<-coxph(Surv(duration,def)~adjusted_mpay_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = zillowdata[zillowdata$recourse==0 & zillowdata$ne_cutoff=="zero",])
+
+cox[[2]]<-coxph(Surv(duration,def)~adjusted_mpay_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = zillowdata[zillowdata$recourse==1 & zillowdata$ne_cutoff=="zero",])
+
+cox[[3]]<-coxph(Surv(duration,def)~adjusted_mpay_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = zillowdata[zillowdata$recourse==0 & zillowdata$ne_cutoff=="twenty",])
+
+cox[[4]]<-coxph(Surv(duration,def)~adjusted_mpay_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = zillowdata[zillowdata$recourse==1 & zillowdata$ne_cutoff=="twenty",])
+
+stargazer(cox,column.labels=c('Non-Recourse','Recourse'), omit = c("state","ne_year","loanpurpose","occupancy"),omit.labels = c("State","Year","",""),type = "text")
+
+```
+
+```{r, results='asis'}
+median_mpay_zillow <- ddply(zillowdata,.(ne_year,ne_cutoff,recourse,state,zip),summarise,
+                     def=mean(def,na.rm = TRUE),
+                     median_mpay_rent = (median(mpay,na.rm = TRUE)/median(rent,na.rm = TRUE)),
+                     fico = median(fico,na.rm = TRUE),
+                     ltv = median(ltv,na.rm = TRUE),
+                     dti = median(dti,na.rm = TRUE),
+                     upb = median(upb,na.rm = TRUE),
+                     medhhincome = median(medhhincome,na.rm = TRUE),
+                     medhouseage = median(medhouseage,na.rm = TRUE),
+                     vacantpct = median(vacantpct,na.rm = TRUE),
+                     bachelorpct = median(bachelorpct,na.rm = TRUE),
+                     withsalarypct = median(withsalarypct,na.rm = TRUE),
+                     obs = length(loanid))
+
+ols <- list()
+
+ols[[1]]<-lm(def~median_mpay_rent+factor(ne_cutoff),data=median_mpay_zillow,weights = sqrt(obs))
+
+ols[[2]]<-lm(def~median_mpay_rent+factor(ne_cutoff)+factor(recourse)+log(upb)+factor(ne_year)+factor(state),data=median_mpay_zillow,weights = sqrt(obs))
+
+ols[[3]]<-lm(def~median_mpay_rent+factor(ne_cutoff)+factor(recourse)+factor(ne_year)+fico+ltv+dti+
+               log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state),data=median_mpay_zillow,weights = sqrt(obs))
+
+stargazer(ols,type="text", omit = c("state","ne_year"),omit.labels = c("State","Year"))
+
+
+```
+
+
+You can also embed plots, for example:
+
+```{r, echo=FALSE}
+plot(cars)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
