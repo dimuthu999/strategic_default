@@ -450,6 +450,8 @@ deldata_zillow['mpay_zillow_rent_q']<-ifelse(deldata_zillow$mpay_zillow_rent<qua
                                              ifelse(deldata_zillow$mpay_zillow_rent<quantile(deldata_zillow$mpay_zillow_rent,0.8,na.rm=TRUE),4,
                                                     ifelse(deldata_zillow$mpay_zillow_rent<max(deldata_zillow$mpay_zillow_rent,na.rm=TRUE),5,NA)))))
 
+saveRDS(deldata_zillow,"zillow_data.rds")
+
 mpay_defpct <- ddply(deldata_zillow, .(recourse,ne_cutoff,mpay_zillow_rent_q),summarise,default=mean(def))
 mpay_defpct <- mpay_defpct[!is.na(mpay_defpct$mpay_zillow_rent_q),]
 write.csv(mpay_defpct,"PMT_RENT_mpayq_zillow.csv")
@@ -470,13 +472,21 @@ median_mpay_zillow <- ddply(deldata_zillow,.(ne_year,ne_cutoff,recourse,state,zi
                      medhouseage = median(medhouseage,na.rm = TRUE),
                      vacantpct = median(vacantpct,na.rm = TRUE),
                      bachelorpct = median(bachelorpct,na.rm = TRUE),
-                     withsalarypct = median(withsalarypct,na.rm = TRUE))
+                     withsalarypct = median(withsalarypct,na.rm = TRUE),
+                     obs = length(loanid))
+
+#median_mpay_zillow <- median_mpay_zillow[median_mpay_zillow$obs>1,]
 
 
 ols <- list()
-ols[[1]]<-lm(def~median_mpay_rent+factor(ne_cutoff),data=median_mpay_zillow)
-ols[[2]]<-lm(def~median_mpay_rent+factor(ne_cutoff)+factor(recourse)+log(upb)+factor(ne_year)+factor(state),data=median_mpay_zillow)
+ols[[1]]<-lm(def~median_mpay_rent+factor(ne_cutoff),data=median_mpay_zillow,weights = sqrt(obs))
+ols[[2]]<-lm(def~median_mpay_rent+factor(ne_cutoff)+factor(recourse)+log(upb)+factor(ne_year)+factor(state),data=median_mpay_zillow,weights = sqrt(obs))
 ols[[3]]<-lm(def~median_mpay_rent+factor(ne_cutoff)+factor(recourse)+factor(ne_year)+fico+ltv+dti+
-               log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state),data=median_mpay_zillow)
-stargazer(ols,out='PMTRent_rent_zip_median_zillow.htm', omit = c("state","ne_year"),omit.labels = c("State","Year"))
+               log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state),data=median_mpay_zillow,weights = sqrt(obs))
+stargazer(ols,out='PMTRent_rent_zip_median_zillow_trunc.htm', omit = c("state","ne_year"),omit.labels = c("State","Year"))
+
+
+
+# Zillow with adjusted rent -----------------------------------------------
+
 
