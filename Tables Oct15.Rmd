@@ -1,10 +1,11 @@
 ---
-title: "zillow analysis2"
-author: "Dimuthu Ratnadiwakara"
+title: "Strategic Default"
 date: "October 2, 2016"
 output: 
   html_document: 
     css: bodycss.css
+    fig_width: 12
+    fig_height: 6
 ---
 
 Using zillow rent.
@@ -23,7 +24,7 @@ library(sandwich)
 file_path = "E:/strategic_default/"
 setwd(file_path)
 source("functions.R")
-output.type = "text"
+output.type = "html"
 
 zillow_cox <- readRDS("cox_ne_0_Oct142016.rds")
 zillow_cox <- rbind(zillow_cox,readRDS("cox_ne_-0.1_Oct142016.rds"))
@@ -46,7 +47,7 @@ mpay_table <- readRDS("mpay_table.rds")
 ```{r warning=FALSE,results='asis'}
 zillow_cox$year <- as.integer(zillow_cox$year)
 stargazer(
-  zillow_cox[zillow_cox$ne_cutoff==0, c("upb","fico","ltv","interestrate","adjusted_mpay_rent","mpay","year")], type = output.type, 
+  zillow_cox[zillow_cox$ne_cutoff==0, c("upb","fico","ltv","interestrate","adjusted_mpay_rent","mpay","year","median_forc_time")], type = output.type, 
   summary.stat = c("mean", "sd","min", "p25", "median", "p75", "max","n")
 )
 
@@ -81,47 +82,31 @@ qplot(zillow_zip$mpay_minus_rent, geom="histogram", main = "Histogram for Mortga
       xlim=c(-1500,200))
 ```
 
-### Univariate Evidence Default ~ mpay_rent
-```{r warning=FALSE,results='asis'}
-
-quantiles <- ddply(zillow_cox,.(ne_cutoff,recourse),summarise,
-                   p20 = quantile(adjusted_mpay_rent,0.2,na.rm = TRUE),
-                   p40 = quantile(adjusted_mpay_rent,0.4,na.rm = TRUE),
-                   p60 = quantile(adjusted_mpay_rent,0.6,na.rm = TRUE),
-                   p80 = quantile(adjusted_mpay_rent,0.8,na.rm = TRUE),
-                   p100 = quantile(adjusted_mpay_rent,1,na.rm = TRUE))
-
-zillow_cox <- merge(zillow_cox,quantiles,by=c("ne_cutoff","recourse"))
-
-zillow_cox['adj_mpay_rent_q']<-ifelse(zillow_cox$adjusted_mpay_rent<= zillow_cox$p20,1,
-                                   ifelse(zillow_cox$adjusted_mpay_rent<= zillow_cox$p40,2,
-                                      ifelse(zillow_cox$adjusted_mpay_rent<= zillow_cox$p60,3,
-                                         ifelse(zillow_cox$adjusted_mpay_rent<= zillow_cox$p80,4,5))))
-
-mpay_defpct <- ddply(zillow_cox, .(ne_cutoff,adj_mpay_rent_q),summarise,default=mean(def))
-mpay_defpct<-melt(mpay_defpct,id=c( "ne_cutoff","adj_mpay_rent_q"), measured=c("default"))
-mpay_defpct<-dcast(mpay_defpct, adj_mpay_rent_q~ne_cutoff)
-
-stargazer(mpay_defpct, type = output.type,summary = FALSE)
-
-
-cox_univariate <- coxph(Surv(duration,def)~poly(adjusted_mpay_rent,5),data = zillow_cox[zillow_cox$recourse==0 & zillow_cox$ne_cutoff==-0.2,])
-
-```
 
 ### Main Cox Model: All variables
+```{r results='asis'}
+
+cox_formula_1 <- as.formula("Surv(duration,def)~adjusted_mpay_rent+median_forc_time+age_t+factor(ne_year)+factor(recourse)+factor(ne_cutoff)")
+
+cox_formula_2 <- as.formula("Surv(duration,def)~adjusted_mpay_rent+median_forc_time+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)")
+
+cox <-list()
+cox[[1]] <- coxph(cox_formula_1,data = zillow_cox)
+cox[[2]] <- coxph(cox_formula_2,data = zillow_cox)
+
+stargazer(cox, omit = c("ne_year","loanpurpose","occupancy","ne_cutoff"),omit.labels = c("Year","","",""),type = output.type,no.space=TRUE)
+```
+
+
+### Hazard Contribution
 ```{r}
-cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent*median_forc_time+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)")
+
+# adjusted_mpay_rent polynomial
+cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+median_forc_time+age_t+I(median_forc_time^2)+I(median_forc_time^3)+I(median_forc_time^4)+I(median_forc_time^5)+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+log(upb)+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)")
 
 cox <- coxph(cox_formula,data = zillow_cox)
 
-stargazer(cox, omit = c("state","ne_year","loanpurpose","occupancy","ne_cutoff"),omit.labels = c("State","Year","","",""),type = output.type,no.space=TRUE)
-
-cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+median_forc_time+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)")
-
-cox <- coxph(cox_formula,data = zillow_cox)
-
-x = (40:165)/100
+x = (40:160)/100
 y = (summary(cox)$coefficients)[1,1] * x +(summary(cox)$coefficients)[2,1] * x^2 +(summary(cox)$coefficients)[3,1] * x^3 +(summary(cox)$coefficients)[4,1] * x^4 +(summary(cox)$coefficients)[5,1] * x^5
 plot_data <- as.data.frame(cbind(x,y))
 
@@ -129,11 +114,13 @@ ggplot(plot_data,aes(x=x,y=y))+geom_point()+
   theme(axis.text.y=element_blank(),
         axis.ticks.y=element_blank())+labs(x = "adjusted_mpay_rent",y="proportional hazard contribution")
 
-cox_formula <- as.formula("Surv(duration,def)~median_forc_time+I(median_forc_time^2)+I(median_forc_time^3)+I(median_forc_time^4)+I(median_forc_time^5)+adjusted_mpay_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)")
+
+# median_forc_time polynomial
+cox_formula <- as.formula("Surv(duration,def)~median_forc_time+I(median_forc_time^2)+I(median_forc_time^3)+I(median_forc_time^4)+I(median_forc_time^5)+adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)")
 
 cox <- coxph(cox_formula,data = zillow_cox)
 
-x = 10:40
+x = seq(from=11, to=16,by=0.1)
 y = (summary(cox)$coefficients)[1,1] * x +(summary(cox)$coefficients)[2,1] * x^2 +(summary(cox)$coefficients)[3,1] * x^3 +(summary(cox)$coefficients)[4,1] * x^4 +(summary(cox)$coefficients)[5,1] * x^5
 plot_data <- as.data.frame(cbind(x,y))
 
@@ -142,32 +129,6 @@ ggplot(plot_data,aes(x=x,y=y))+geom_point()+
         axis.ticks.y=element_blank())+labs(x = "median_forc_time",y="proportional hazard contribution")
 
 
-```
-
-### Cox regression (default,duration)~adjusted_mpay_rent
-```{r results='asis',warning=FALSE}
-ne_cuts <- c(0,-0.1,-0.2,-0.3,-0.4,-0.5,-0.6,-0.7)
-i=1
-
-cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)")
-
-cox<-list()
-cox_coefficients <- NULL
-for(cut in ne_cuts) {
-  cox[[i]] <- coxph(cox_formula,data = zillow_cox[zillow_cox$recourse==0 & zillow_cox$ne_cutoff==cut,])
-  cox_coefficients <- rbind(cox_coefficients, c(cut,0,summary(cox[[i]])$coefficients[1,1],summary(cox[[i]])$coefficients[1,3],(exp(as.numeric(cox[[i]]$coefficients[1]))-1)*sd(zillow_cox[zillow_cox$recourse==0 & zillow_cox$ne_cutoff==cut,]$adjusted_mpay_rent)))
-  i=i+1
-  cox[[i]] <- coxph(cox_formula,data = zillow_cox[zillow_cox$recourse==1 & zillow_cox$ne_cutoff==cut,])
-  cox_coefficients <- rbind(cox_coefficients, c(cut,1,summary(cox[[i]])$coefficients[1,1],summary(cox[[i]])$coefficients[1,3],(exp(as.numeric(cox[[i]]$coefficients[1]))-1)*sd(zillow_cox[zillow_cox$recourse==1 & zillow_cox$ne_cutoff==cut,]$adjusted_mpay_rent)))
-  i=i+1
-}
-
-cox_coefficients <- as.data.frame(cox_coefficients)
-names(cox_coefficients) <- c("NE Cutoff","Recourse","Coefficient","Std. Error","Marginal Effect")
-stargazer(cox[[5]],cox[[6]],cox[[9]],cox[[10]],column.labels=c('Non-Recourse-20','Recourse-20','Non-Recourse-40','Recourse-40'), omit = c("state","ne_year","loanpurpose","occupancy"),omit.labels = c("State","Year","",""),type = output.type,no.space=TRUE)
-
-cox_coefficients <- cox_coefficients[order(cox_coefficients$Recourse),]
-stargazer(cox_coefficients,summary = FALSE,type = output.type)
 ```
 
 ### Cox regression (default,duration)~adjusted_mpay_rent (2)
@@ -175,58 +136,27 @@ stargazer(cox_coefficients,summary = FALSE,type = output.type)
 ne_cuts <- c(0,-0.1,-0.2,-0.3,-0.4,-0.5,-0.6,-0.7)
 i=1
 
-cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+poly(median_forc_time,5)+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(rec_state)")
+cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+poly(mean_forc_time,5)+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(rec_state)")
 
 cox<-list()
 cox_coefficients <- NULL
 for(cut in ne_cuts) {
   cat(i,cut,"\n")
   cox[[i]] <- coxph(cox_formula,data = zillow_cox[zillow_cox$ne_cutoff==cut & !is.na(zillow_cox$median_forc_time),])
+  
+  cox_coefficients <- rbind(cox_coefficients, c(cut,summary(cox[[i]])$coefficients[1,1],summary(cox[[i]])$coefficients[1,3],(exp(as.numeric(cox[[i]]$coefficients[1]))-1)*sd(zillow_cox[zillow_cox$ne_cutoff==cut,]$adjusted_mpay_rent)))
+
+  
   i=i+1
 }
 
-stargazer(cox, omit = c("ne_year","loanpurpose","occupancy"),omit.labels = c("Year","",""),type = output.type,no.space=TRUE)
+#stargazer(cox, omit = c("ne_year","loanpurpose","occupancy"),omit.labels = c("Year","",""),type = output.type,no.space=TRUE)
+cox_coefficients <- as.data.frame(cox_coefficients)
+names(cox_coefficients) <- c("NE Cutoff","Coefficient","Std. Error","Marginal Effect")
+stargazer(cox_coefficients,summary = FALSE,type = output.type)
 
 ```
 
-### Cox graph: ne-cut : 0, recourse==0
-```{r}
-
-# adjusted_mpay_rent polynomial
-cox1<-coxph(Surv(duration,def)~adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = zillow_cox[zillow_cox$recourse==0 & zillow_cox$ne_cutoff==0,])
-
-x = (40:165)/100
-y = (summary(cox1)$coefficients)[1,1] * x +(summary(cox1)$coefficients)[2,1] * x^2 +(summary(cox1)$coefficients)[3,1] * x^3 +(summary(cox1)$coefficients)[4,1] * x^4 +(summary(cox1)$coefficients)[5,1] * x^5
-plot_data <- as.data.frame(cbind(x,y))
-
-ggplot(plot_data,aes(x=x,y=y))+geom_point()+
-  theme(axis.text.y=element_blank(),
-        axis.ticks.y=element_blank())+labs(x = "adjusted_mpay_rent",y="proportional hazard contribution")
-
-# age polinomial
-
-cox1<-coxph(Surv(duration,def)~age_t+I(age_t^2)+I(age_t^3)+I(age_t^4)+I(age_t^5)+adjusted_mpay_rent+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = zillow_cox[zillow_cox$recourse==0 & zillow_cox$ne_cutoff==0,])
-
-x = 10:100
-y = (summary(cox1)$coefficients)[1,1] * x +(summary(cox1)$coefficients)[2,1] * x^2 +(summary(cox1)$coefficients)[3,1] * x^3 +(summary(cox1)$coefficients)[4,1] * x^4 +(summary(cox1)$coefficients)[5,1] * x^5
-plot_data <- as.data.frame(cbind(x,y))
-
-ggplot(plot_data,aes(x=x,y=y))+geom_point()+
-  theme(axis.text.y=element_blank(),
-        axis.ticks.y=element_blank())+labs(x = "age",y="proportional hazard contribution")
-
-# forc_time polynomial
-cox1<-coxph(Surv(duration,def)~median_forc_time+I(median_forc_time^2)+I(median_forc_time^3)+I(median_forc_time^4)+I(median_forc_time^5)+factor(rec_state)+adjusted_mpay_rent+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose),data = zillow_cox[zillow_cox$ne_cutoff==0,],control = coxph.control(iter.max = 100))
-
-x = 10:50
-y = (summary(cox1)$coefficients)[1,1] * x +(summary(cox1)$coefficients)[2,1] * x^2 +(summary(cox1)$coefficients)[3,1] * x^3 +(summary(cox1)$coefficients)[4,1] * x^4 +(summary(cox1)$coefficients)[5,1] * x^5
-plot_data <- as.data.frame(cbind(x,y))
-
-ggplot(plot_data,aes(x=x,y=y))+geom_point()+
-  theme(axis.text.y=element_blank(),
-        axis.ticks.y=element_blank())+labs(x = "median_forc_time",y="proportional hazard contribution")
-
-```
 
 ### Zipcode level regression: default % ~ median mpay_rent
 
@@ -244,6 +174,7 @@ median_mpay_zillow <- ddply(zillow_cox,.(ne_qt,ne_cutoff,recourse,state,zip),sum
                      medhhincome = mean(medhhincome,na.rm = TRUE),
                      medhouseage = mean(medhouseage,na.rm = TRUE),
                      vacantpct = mean(vacantpct,na.rm = TRUE),
+                     median_forc_time = mean(median_forc_time,na.rm = TRUE),
                      bachelorpct = mean(bachelorpct,na.rm = TRUE),
                      withsalarypct = mean(withsalarypct,na.rm = TRUE),
                      obs = length(loanid))
@@ -260,6 +191,7 @@ median_mpay_zillow2 <- ddply(zillow_cox,.(ne_cutoff,recourse,state),summarise,
                      medhhincome = mean(medhhincome,na.rm = TRUE),
                      medhouseage = mean(medhouseage,na.rm = TRUE),
                      vacantpct = mean(vacantpct,na.rm = TRUE),
+                     median_forc_time = mean(median_forc_time,na.rm = TRUE),
                      bachelorpct = mean(bachelorpct,na.rm = TRUE),
                      withsalarypct = mean(withsalarypct,na.rm = TRUE),
                      obs = length(loanid))
@@ -274,26 +206,24 @@ ols <- list()
 se <- list()
 marginal_effects <- list()
 
+ols_formula <- as.formula("def~adjusted_mpay_rent+median_forc_time+factor(recourse)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state)+factor(ne_qt)+age_t")
+
 #------------------
-ols[[1]]<-lm(def~adjusted_mpay_rent+factor(recourse)+fico+ltv+dti+
-               log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state)+factor(ne_qt)+age_t,data=median_mpay_zillow[median_mpay_zillow$ne_cutoff==0,])
+ols[[1]]<-lm(ols_formula,data=median_mpay_zillow[median_mpay_zillow$ne_cutoff==0,])
 se[[1]] <- sqrt(diag(vcovHAC(ols[[1]])))
 marginal_effects[[1]] <- summary(ols[[1]])$coefficients[2]*sd(median_mpay_zillow[median_mpay_zillow$ne_cutoff==0,]$adjusted_mpay_rent)
 #------------------
-ols[[2]]<-lm(def~adjusted_mpay_rent+factor(recourse)+fico+ltv+dti+
-               log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state)+factor(ne_qt)+age_t,data=median_mpay_zillow[median_mpay_zillow$ne_cutoff==-0.1,])
+ols[[2]]<-lm(ols_formula,data=median_mpay_zillow[median_mpay_zillow$ne_cutoff==-0.1,])
 se[[2]] <- sqrt(diag(vcovHAC(ols[[2]])))
 marginal_effects[[2]] <- summary(ols[[2]])$coefficients[2]*sd(median_mpay_zillow[median_mpay_zillow$ne_cutoff==-0.1,]$adjusted_mpay_rent)
 #------------------
-ols[[3]]<-lm(def~adjusted_mpay_rent+factor(recourse)+fico+ltv+dti+
-               log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state)+factor(ne_qt)+age_t,data=median_mpay_zillow[median_mpay_zillow$ne_cutoff==-0.2,])
+ols[[3]]<-lm(ols_formula,data=median_mpay_zillow[median_mpay_zillow$ne_cutoff==-0.2,])
 
 se[[3]] <- sqrt(diag(vcovHAC(ols[[3]])))
 marginal_effects[[3]] <- summary(ols[[3]])$coefficients[2]*sd(median_mpay_zillow[median_mpay_zillow$ne_cutoff==-0.2,]$adjusted_mpay_rent)
 #------------------
-ols[[4]]<-lm(def~adjusted_mpay_rent+factor(ne_cutoff)+factor(recourse)+fico+ltv+dti+
-               log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state)+factor(ne_qt)+age_t,data=median_mpay_zillow)
-se[[4]] <- sqrt(diag(vcovHAC(ols[[4]])))
+ols[[4]]<-lm(def~adjusted_mpay_rent+median_forc_time+factor(recourse)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state)+factor(ne_qt)+age_t+factor(ne_cutoff),data=median_mpay_zillow)
+#se[[4]] <- sqrt(diag(vcovHAC(ols[[4]])))
 marginal_effects[[4]] <- summary(ols[[4]])$coefficients[2]*sd(median_mpay_zillow$adjusted_mpay_rent)
 #------------------
 stargazer(ols, omit = c("state","ne_qt","ne_cutoff"), column.labels=c('NE 0','NE -10%','NE -20%','All NE'), omit.labels = c("State","Time","Negative Equity"), type=output.type,no.space=TRUE,se=se)
@@ -301,7 +231,7 @@ stargazer(ols, omit = c("state","ne_qt","ne_cutoff"), column.labels=c('NE 0','NE
 marginal_effects
 ```
 
-
+## Delete Later
 ### Loan-month default
 ```{r results='asis'}
 # ne_cuts <- c(0,-0.1,-0.2,-0.3,-0.4,-0.5,-0.6,-0.7)
@@ -322,5 +252,60 @@ marginal_effects
 #   gc()
 # }
 
+```
+
+
+### Univariate Evidence Default ~ mpay_rent
+```{r warning=FALSE,results='asis'}
+
+# quantiles <- ddply(zillow_cox,.(ne_cutoff,recourse),summarise,
+#                    p20 = quantile(adjusted_mpay_rent,0.2,na.rm = TRUE),
+#                    p40 = quantile(adjusted_mpay_rent,0.4,na.rm = TRUE),
+#                    p60 = quantile(adjusted_mpay_rent,0.6,na.rm = TRUE),
+#                    p80 = quantile(adjusted_mpay_rent,0.8,na.rm = TRUE),
+#                    p100 = quantile(adjusted_mpay_rent,1,na.rm = TRUE))
+# 
+# zillow_cox <- merge(zillow_cox,quantiles,by=c("ne_cutoff","recourse"))
+# 
+# zillow_cox['adj_mpay_rent_q']<-ifelse(zillow_cox$adjusted_mpay_rent<= zillow_cox$p20,1,
+#                                    ifelse(zillow_cox$adjusted_mpay_rent<= zillow_cox$p40,2,
+#                                       ifelse(zillow_cox$adjusted_mpay_rent<= zillow_cox$p60,3,
+#                                          ifelse(zillow_cox$adjusted_mpay_rent<= zillow_cox$p80,4,5))))
+# 
+# mpay_defpct <- ddply(zillow_cox, .(ne_cutoff,adj_mpay_rent_q),summarise,default=mean(def))
+# mpay_defpct<-melt(mpay_defpct,id=c( "ne_cutoff","adj_mpay_rent_q"), measured=c("default"))
+# mpay_defpct<-dcast(mpay_defpct, adj_mpay_rent_q~ne_cutoff)
+# 
+# stargazer(mpay_defpct, type = output.type,summary = FALSE)
+# 
+# 
+# cox_univariate <- coxph(Surv(duration,def)~poly(adjusted_mpay_rent,5),data = zillow_cox[zillow_cox$recourse==0 & zillow_cox$ne_cutoff==-0.2,])
+
+```
+
+### Cox regression (default,duration)~adjusted_mpay_rent
+```{r results='asis',warning=FALSE}
+# ne_cuts <- c(0,-0.1,-0.2,-0.3,-0.4,-0.5,-0.6,-0.7)
+# i=1
+# 
+# cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)")
+# 
+# cox<-list()
+# cox_coefficients <- NULL
+# for(cut in ne_cuts) {
+#   cox[[i]] <- coxph(cox_formula,data = zillow_cox[zillow_cox$recourse==0 & zillow_cox$ne_cutoff==cut,])
+#   cox_coefficients <- rbind(cox_coefficients, c(cut,0,summary(cox[[i]])$coefficients[1,1],summary(cox[[i]])$coefficients[1,3],(exp(as.numeric(cox[[i]]$coefficients[1]))-1)*sd(zillow_cox[zillow_cox$recourse==0 & zillow_cox$ne_cutoff==cut,]$adjusted_mpay_rent)))
+#   i=i+1
+#   cox[[i]] <- coxph(cox_formula,data = zillow_cox[zillow_cox$recourse==1 & zillow_cox$ne_cutoff==cut,])
+#   cox_coefficients <- rbind(cox_coefficients, c(cut,1,summary(cox[[i]])$coefficients[1,1],summary(cox[[i]])$coefficients[1,3],(exp(as.numeric(cox[[i]]$coefficients[1]))-1)*sd(zillow_cox[zillow_cox$recourse==1 & zillow_cox$ne_cutoff==cut,]$adjusted_mpay_rent)))
+#   i=i+1
+# }
+# 
+# cox_coefficients <- as.data.frame(cox_coefficients)
+# names(cox_coefficients) <- c("NE Cutoff","Recourse","Coefficient","Std. Error","Marginal Effect")
+# stargazer(cox[[5]],cox[[6]],cox[[9]],cox[[10]],column.labels=c('Non-Recourse-20','Recourse-20','Non-Recourse-40','Recourse-40'), omit = c("state","ne_year","loanpurpose","occupancy"),omit.labels = c("State","Year","",""),type = output.type,no.space=TRUE)
+# 
+# cox_coefficients <- cox_coefficients[order(cox_coefficients$Recourse),]
+# stargazer(cox_coefficients,summary = FALSE,type = output.type)
 ```
 
