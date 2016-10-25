@@ -1,0 +1,330 @@
+---
+title: "Strategic Default"
+date: "October 24♦, 2016"
+output: 
+  html_document: 
+    css: bodycss.css
+    fig_height: 6
+    fig_width: 12
+    toc: yes
+---
+
+Using zillow rent.
+
+```{r warning=FALSE,message=FALSE}
+rm(list=ls())
+library(data.table)
+library(zoo)
+library(sqldf)
+library(stargazer)
+library(survival)
+library(reshape2)
+library(zipcode)
+library(ggplot2)
+library(sandwich)
+file_path = "E:/strategic_default/"
+setwd(file_path)
+source("functions.R")
+output.type = "html"
+
+zillow_cox <- readRDS("cox_ne_0_Oct142016.rds")
+zillow_cox <- rbind(zillow_cox,readRDS("cox_ne_-0.1_Oct142016.rds"))
+zillow_cox <- rbind(zillow_cox,readRDS("cox_ne_-0.2_Oct142016.rds"))
+zillow_cox <- rbind(zillow_cox,readRDS("cox_ne_-0.3_Oct142016.rds"))
+zillow_cox <- rbind(zillow_cox,readRDS("cox_ne_-0.4_Oct142016.rds"))
+zillow_cox <- rbind(zillow_cox,readRDS("cox_ne_-0.5_Oct142016.rds"))
+zillow_cox <- rbind(zillow_cox,readRDS("cox_ne_-0.6_Oct142016.rds"))
+zillow_cox <- rbind(zillow_cox,readRDS("cox_ne_-0.7_Oct142016.rds"))
+
+zillow_cox['rec_state']<-ifelse(zillow_cox$recourse==1,"rec","non-rec")
+
+zip_forc_time <- readRDS("zip_forc_time.rds")
+zillow_cox <- merge(zillow_cox,zip_forc_time,by="zip",all.x = TRUE)
+mpay_table <- readRDS("mpay_table.rds")
+
+```
+
+### Descriptive Statistics
+```{r warning=FALSE,results='asis'}
+zillow_cox$year <- as.integer(zillow_cox$year)
+stargazer(
+  zillow_cox[zillow_cox$ne_cutoff==0, c("upb","fico","ltv","interestrate","adjusted_mpay_rent","mpay","year","median_forc_time")], type = output.type, 
+  summary.stat = c("mean", "sd","min", "p25", "median", "p75", "max","n")
+)
+
+```
+
+
+### mpay_rent map
+```{r}
+require(RCurl)
+require(xlsx)
+require(zipcode)
+require(ggmap)
+require("ggplot2")
+
+zip_mpay_rent <- ddply(zillow_cox,.(zip),summarise,
+                     adjusted_mpay_rent=mean(adjusted_mpay_rent,na.rm = TRUE))
+head(zip_mpay_rent)
+
+data(zipcode)
+names(zipcode)[1] = "zip5"
+zipcode$zip5 <- as.numeric(zipcode$zip5)
+zipcode['zip']<-floor(zipcode$zip5/100)*100
+zip_mpay_rent <- merge(zipcode, zip_mpay_rent, by='zip')
+
+map<-get_map(location='united states', zoom=4, maptype = "roadmap",
+             source='google',color='color')
+
+ggmap(map) + geom_point(
+        aes(x=longitude, y=latitude, show_guide = TRUE, colour=adjusted_mpay_rent), 
+        data=zip_mpay_rent, alpha=.8, na.rm = T)  + 
+        scale_color_gradient(low="yellow", high="blue")
+
+```
+
+
+### Most borrowers do not default when faced with negative equity
+```{r results='asis'}
+default_pct <- ddply(zillow_cox,.(ne_cutoff),summarise,default_rate = mean(def,na.rm = TRUE))
+default_pct <- default_pct[order(-default_pct$ne_cutoff),]
+ggplot(default_pct, aes(x = factor(ne_cutoff), y = default_rate)) + geom_bar(stat = "identity")+ylab("Default Rate")+xlab("Negative Equity")
+```
+
+### Mortgage payment vs Rent comparison
+Compares the mortgage payment of a typical loan originated in 2005 in each zipcode to the zillow single family rent for each zip code from 2010 to 2014
+```{r}
+# allloans <- readRDS("CombinedFreddieFannieAct_Nov18.rds")
+# allloans['org_year']<-format(allloans$orgdate,"%Y")
+# allloans <- allloans[allloans$org_year==2005,]
+# gc(reset = TRUE)
+# mpay_table <- ddply(allloans,.(zip),summarise,upb=median(upb,na.rm = TRUE),ltv=median(ltv,na.rm = TRUE),interestrate=median(interestrate,na.rm = TRUE))
+# saveRDS(mpay_table,file="mpay_table.rds")
+mpay_table['mpay']<-apply(mpay_table[,c('upb','interestrate')],1,function(x) mortgage(x['upb'],x['interestrate'],360))
+zillow_zip <- ddply(zillow_cox,.(zip),summarise,rent = max(rent,na.rm = TRUE))
+zillow_zip <- merge(mpay_table,zillow_zip,by=c("zip"))
+zillow_zip['mpay_minus_rent'] <- zillow_zip$mpay - zillow_zip$rent
+zillow_zip <- zillow_zip[zillow_zip$mpay_minus_rent<quantile(zillow_zip$mpay_minus_rent,0.99) & zillow_zip$mpay_minus_rent>quantile(zillow_zip$mpay_minus_rent,0.01),]
+summary(zillow_zip$mpay_minus_rent)
+qplot(zillow_zip$mpay_minus_rent, geom="histogram", main = "Histogram for Mortgage Payment - Rent", 
+      xlab = "Mortgage Payment - Rent",  
+      alpha=I(1),
+      xlim=c(-1500,200))
+```
+
+
+### Main Cox Model: All variables
+```{r results='asis'}
+
+cox_formula_1 <- as.formula("Surv(duration,def)~adjusted_mpay_rent+median_forc_time+age_t+factor(ne_year)+factor(recourse)+factor(ne_cutoff)+log(upb)/ltv")
+
+cox_formula_2 <- as.formula("Surv(duration,def)~adjusted_mpay_rent+median_forc_time+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)+log(upb)/ltv")
+
+cox <-list()
+cox[[1]] <- coxph(cox_formula_1,data = zillow_cox)
+cox[[2]] <- coxph(cox_formula_2,data = zillow_cox)
+
+stargazer(cox, omit = c("ne_year","loanpurpose","occupancy","ne_cutoff"),omit.labels = c("Year","","",""),type = output.type,no.space=TRUE)
+```
+
+
+### Hazard Contribution
+```{r}
+
+# adjusted_mpay_rent polynomial
+cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+median_forc_time+age_t+I(median_forc_time^2)+I(median_forc_time^3)+I(median_forc_time^4)+I(median_forc_time^5)+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+log(upb)+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)+log(upb)/ltv")
+
+cox <- coxph(cox_formula,data = zillow_cox)
+
+x = (40:160)/100
+y = (summary(cox)$coefficients)[1,1] * x +(summary(cox)$coefficients)[2,1] * x^2 +(summary(cox)$coefficients)[3,1] * x^3 +(summary(cox)$coefficients)[4,1] * x^4 +(summary(cox)$coefficients)[5,1] * x^5
+plot_data <- as.data.frame(cbind(x,y))
+
+ggplot(plot_data,aes(x=x,y=y))+geom_point()+
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())+labs(x = "adjusted_mpay_rent",y="proportional hazard contribution")
+
+
+# median_forc_time polynomial
+cox_formula <- as.formula("Surv(duration,def)~median_forc_time+I(median_forc_time^2)+I(median_forc_time^3)+I(median_forc_time^4)+I(median_forc_time^5)+adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)+log(upb)/ltv")
+
+cox <- coxph(cox_formula,data = zillow_cox)
+
+x = seq(from=11, to=16,by=0.1)
+y = (summary(cox)$coefficients)[1,1] * x +(summary(cox)$coefficients)[2,1] * x^2 +(summary(cox)$coefficients)[3,1] * x^3 +(summary(cox)$coefficients)[4,1] * x^4 +(summary(cox)$coefficients)[5,1] * x^5
+plot_data <- as.data.frame(cbind(x,y))
+
+ggplot(plot_data,aes(x=x,y=y))+geom_point()+
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())+labs(x = "median_forc_time",y="proportional hazard contribution")
+
+
+```
+
+### Cox regression (default,duration)~adjusted_mpay_rent (2)
+```{r results='asis',warning=FALSE}
+ne_cuts <- c(0,-0.1,-0.2,-0.3,-0.4,-0.5,-0.6,-0.7)
+i=1
+
+cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+poly(mean_forc_time,5)+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+log(upb)+log(medhhincome)+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(rec_state)+log(upb)/ltv")
+
+cox<-list()
+cox_coefficients <- NULL
+for(cut in ne_cuts) {
+  cox[[i]] <- coxph(cox_formula,data = zillow_cox[zillow_cox$ne_cutoff==cut & !is.na(zillow_cox$median_forc_time),])
+  
+  cox_coefficients <- rbind(cox_coefficients, c(cut,summary(cox[[i]])$coefficients[1,1],summary(cox[[i]])$coefficients[1,3],(exp(as.numeric(cox[[i]]$coefficients[1]))-1)*sd(zillow_cox[zillow_cox$ne_cutoff==cut,]$adjusted_mpay_rent)))
+
+  
+  i=i+1
+}
+
+#stargazer(cox, omit = c("ne_year","loanpurpose","occupancy"),omit.labels = c("Year","",""),type = output.type,no.space=TRUE)
+cox_coefficients <- as.data.frame(cox_coefficients)
+names(cox_coefficients) <- c("NE Cutoff","Coefficient","Std. Error","Marginal Effect")
+stargazer(cox_coefficients,summary = FALSE,type = output.type)
+
+```
+
+
+### Zipcode level regression: default % ~ median mpay_rent
+
+```{r warning=FALSE}
+zillow_cox['ne_qt']<- as.yearqtr(zillow_cox$reportingperiod_t)
+median_mpay_zillow <- ddply(zillow_cox,.(ne_qt,ne_cutoff,recourse,state,zip),summarise,
+                     def=mean(def,na.rm = TRUE),
+                     adjusted_mpay_rent = mean(adjusted_mpay_rent,na.rm = TRUE),
+                     fico = mean(fico,na.rm = TRUE),
+                     ltv = mean(ltv,na.rm = TRUE),
+                     dti = mean(dti,na.rm = TRUE),
+                     ne_year = mean(ne_year,na.rm = TRUE),
+                     upb = mean(upb,na.rm = TRUE),
+                     age_t = mean(age_t, na.rm = TRUE),
+                     medhhincome = mean(medhhincome,na.rm = TRUE),
+                     medhouseage = mean(medhouseage,na.rm = TRUE),
+                     vacantpct = mean(vacantpct,na.rm = TRUE),
+                     median_forc_time = mean(median_forc_time,na.rm = TRUE),
+                     bachelorpct = mean(bachelorpct,na.rm = TRUE),
+                     withsalarypct = mean(withsalarypct,na.rm = TRUE),
+                     obs = length(loanid))
+
+median_mpay_zillow2 <- ddply(zillow_cox,.(ne_cutoff,recourse,state),summarise,
+                     def=mean(def,na.rm = TRUE),
+                     adjusted_mpay_rent = mean(adjusted_mpay_rent,na.rm = TRUE),
+                     fico = mean(fico,na.rm = TRUE),
+                     ltv = mean(ltv,na.rm = TRUE),
+                     dti = mean(dti,na.rm = TRUE),
+                     ne_year = mean(ne_year,na.rm = TRUE),
+                     upb = mean(upb,na.rm = TRUE),
+                     age_t = mean(age_t, na.rm = TRUE),
+                     medhhincome = mean(medhhincome,na.rm = TRUE),
+                     medhouseage = mean(medhouseage,na.rm = TRUE),
+                     vacantpct = mean(vacantpct,na.rm = TRUE),
+                     median_forc_time = mean(median_forc_time,na.rm = TRUE),
+                     bachelorpct = mean(bachelorpct,na.rm = TRUE),
+                     withsalarypct = mean(withsalarypct,na.rm = TRUE),
+                     obs = length(loanid))
+
+summary(median_mpay_zillow2$def)
+summary(median_mpay_zillow2$adjusted_mpay_rent)
+
+```
+
+```{r  results='asis',warning=FALSE}
+ols <- list()
+se <- list()
+marginal_effects <- list()
+
+ols_formula <- as.formula("def~adjusted_mpay_rent+median_forc_time+factor(recourse)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state)+factor(ne_qt)+age_t+log(upb)/ltv")
+
+#------------------
+ols[[1]]<-lm(ols_formula,data=median_mpay_zillow[median_mpay_zillow$ne_cutoff==0,])
+se[[1]] <- sqrt(diag(vcovHAC(ols[[1]])))
+marginal_effects[[1]] <- summary(ols[[1]])$coefficients[2]*sd(median_mpay_zillow[median_mpay_zillow$ne_cutoff==0,]$adjusted_mpay_rent)
+#------------------
+ols[[2]]<-lm(ols_formula,data=median_mpay_zillow[median_mpay_zillow$ne_cutoff==-0.1,])
+se[[2]] <- sqrt(diag(vcovHAC(ols[[2]])))
+marginal_effects[[2]] <- summary(ols[[2]])$coefficients[2]*sd(median_mpay_zillow[median_mpay_zillow$ne_cutoff==-0.1,]$adjusted_mpay_rent)
+#------------------
+ols[[3]]<-lm(ols_formula,data=median_mpay_zillow[median_mpay_zillow$ne_cutoff==-0.2,])
+
+se[[3]] <- sqrt(diag(vcovHAC(ols[[3]])))
+marginal_effects[[3]] <- summary(ols[[3]])$coefficients[2]*sd(median_mpay_zillow[median_mpay_zillow$ne_cutoff==-0.2,]$adjusted_mpay_rent)
+#------------------
+ols[[4]]<-lm(def~adjusted_mpay_rent+median_forc_time+factor(recourse)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(state)+factor(ne_qt)+age_t+factor(ne_cutoff),data=median_mpay_zillow)
+#se[[4]] <- sqrt(diag(vcovHAC(ols[[4]])))
+marginal_effects[[4]] <- summary(ols[[4]])$coefficients[2]*sd(median_mpay_zillow$adjusted_mpay_rent)
+#------------------
+stargazer(ols, omit = c("state","ne_qt","ne_cutoff"), column.labels=c('NE 0','NE -10%','NE -20%','All NE'), omit.labels = c("State","Time","Negative Equity"), type=output.type,no.space=TRUE,se=se)
+
+marginal_effects
+```
+
+
+### Self-cure cox ph
+```{r results='asis',warning=FALSE}
+self_cure_data <- readRDS(paste(file_path,"self_cure_sample_Oct242016.rds",sep=""))
+
+self_cure_data$duration <- ifelse(is.na(self_cure_data$duration),12,self_cure_data$duration)
+
+zip_forc_time <- readRDS(paste(file_path,"zip_forc_time.rds",sep = ""))
+self_cure_data <- merge(self_cure_data,zip_forc_time,by="zip",all.x = TRUE)
+
+stargazer(self_cure_data[,c("upb","fico","ltv","interestrate","adjusted_mpay_rent","selfcure","year","median_forc_time")], type = output.type,  summary.stat = c("mean", "sd","min", "p25", "median", "p75", "max","n")
+)
+
+cox_formula_1 <- as.formula("Surv(duration,selfcure)~adjusted_mpay_rent+median_forc_time+age_t+factor(ne_year)+factor(recourse)+log(upb)/ltv")
+
+cox_formula_2 <- as.formula("Surv(duration,selfcure)~adjusted_mpay_rent+median_forc_time+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+log(upb)/ltv")
+
+cox <-list()
+marginal_effects <- list()
+cox[[1]] <- coxph(cox_formula_1,data = self_cure_data)
+  marginal_effects[[1]]<-(exp(as.numeric(cox[[1]]$coefficients[1]))-1)*sd(self_cure_data$adjusted_mpay_rent)
+cox[[2]] <- coxph(cox_formula_2,data = self_cure_data)
+  marginal_effects[[2]]<-(exp(as.numeric(cox[[2]]$coefficients[1]))-1)*sd(self_cure_data$adjusted_mpay_rent)
+
+stargazer(cox, omit = c("ne_year","loanpurpose","occupancy"),omit.labels = c("Year","",""),type = output.type,no.space=TRUE)
+
+marginal_effects
+```
+
+### Self cure polynomial
+```{r results='asis',warning=FALSE}
+cox_formula <- as.formula("Surv(duration,selfcure)~adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+median_forc_time+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+log(upb)/ltv")
+
+cox <- coxph(cox_formula,data = self_cure_data)
+
+x = (40:160)/100
+y = (summary(cox)$coefficients)[1,1] * x +(summary(cox)$coefficients)[2,1] * x^2 +(summary(cox)$coefficients)[3,1] * x^3 +(summary(cox)$coefficients)[4,1] * x^4 +(summary(cox)$coefficients)[5,1] * x^5
+plot_data <- as.data.frame(cbind(x,y))
+
+ggplot(plot_data,aes(x=x,y=y))+geom_point()+
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())+labs(x = "adjusted_mpay_rent",y="proportional hazard contribution")
+
+
+```
+
+
+### Zip code level sold pct and inventory number
+Percentage Houses Sold in each 3 digit zip code and for sale inventory in each zip code
+(Using the median age to calculate mpay)
+```{r results='asis',warning=FALSE}
+
+decile_data <- readRDS(paste(file_path,"decile_stats_merged.rds",sep=""))
+decile_data['new_default_pct']<- decile_data$freddie_no_of_defaults*100/decile_data$freddie_no_of_loans
+decile_data$ne_default_pct=decile_data$ne_default_pct*100
+
+stargazer(
+  decile_data[decile_data$age_decile==5, c("sold_pct","ne_default_pct","inventory_value","mpay_rent","mpay","rent")], type = output.type, 
+  summary.stat = c("mean", "sd","min", "p25", "median", "p75", "max")
+)
+
+ols <- list()
+ols[[1]] <- lm(sold_pct~mpay_rent+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+age+factor(state)+factor(current_year),data=decile_data[decile_data$age_decile==5,])
+ols[[2]] <- lm(inventory_value~mpay_rent+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+age+factor(state)+factor(current_year),data=decile_data[decile_data$age_decile==5,])
+
+stargazer(ols, omit = c("state","current_year"),omit.labels = c("State","Year"),type=output.type,no.space=TRUE)
+
+```
