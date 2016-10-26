@@ -130,14 +130,15 @@ time_horizen = 84
 
 negative_equity = -0.5
 mpay <- mortgage(upb,interestrate,term)
-rent = 2000
+rent = 1500
 amort_table <- amortize(upb,interestrate/100,term)
 outstanding_start = amort_table[current_age,]$amortization
 outstanding_end = amort_table[current_age+time_horizen,]$amortization
 forc_time = 12
+recourse_recovery = 0.2
 
 
-other_cost_of_default = 0
+other_cost_of_default = 5000
 cost_of_default = (pv(r = interestrate/1200,pmt = -rent,n = (time_horizen-forc_time)))/((1+interestrate/1200)^forc_time)+other_cost_of_default
 
 
@@ -153,7 +154,7 @@ for(negative_equity in ne)  {
   else {
     cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)+(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
   }
-  cost_of_default_r = (pv(r = interestrate/1200,pmt = -1200,n = (time_horizen-forc_time)))/((1+interestrate/1200)^forc_time)+other_cost_of_default
+  cost_of_default_r = (pv(r = interestrate/1200,pmt = -2000,n = (time_horizen-forc_time)))/((1+interestrate/1200)^forc_time)+other_cost_of_default
   
   ne_plot0 <- rbind(ne_plot0,c(negative_equity,cost_of_default,cost_of_default_r,cost_of_nodefault))
 } 
@@ -170,29 +171,50 @@ for(negative_equity in ne)  {
   current_housevalue = outstanding_start/(1-negative_equity)
   housevalue_end = current_housevalue*(1+house_appreciation/1200)^time_horizen  
   if(outstanding_end>housevalue_end) {
-    cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)
-    cost_of_default_r = cost_of_default+(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
+    cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)+other_cost_of_default/((1+interestrate/1200)^time_horizen)
+  } 
+  else {
+    cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)+(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
+  }
+  ne_plot <- rbind(ne_plot,c(negative_equity,cost_of_default,cost_of_nodefault))
+} 
+ne_plot <- as.data.frame(ne_plot)
+names(ne_plot) <- c("negative_equity","cost_of_default(NR)","cost_of_no_default")
+ne_plot <- melt(ne_plot, id="negative_equity")
+names(ne_plot)[3]<-"cost"
+
+
+ne <- seq(from=0,to=-1,by=-0.05)
+house_appreciation = 2
+ne_plot2 <- NULL
+for(negative_equity in ne)  {
+  current_housevalue = outstanding_start/(1-negative_equity)
+  housevalue_end = current_housevalue*(1+house_appreciation/1200)^time_horizen  
+  if(outstanding_end>housevalue_end) {
+    cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)+other_cost_of_default/((1+interestrate/1200)^time_horizen)+recourse_recovery*(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
+    cost_of_default_r = cost_of_default+recourse_recovery*(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
   } 
   else {
     cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)+(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
     cost_of_default_r = cost_of_default
   }
-  ne_plot <- rbind(ne_plot,c(negative_equity,cost_of_default,cost_of_default_r,cost_of_nodefault))
+  ne_plot2 <- rbind(ne_plot2,c(negative_equity,cost_of_default_r,cost_of_nodefault))
 } 
-ne_plot <- as.data.frame(ne_plot)
-names(ne_plot) <- c("negative_equity","cost_of_default(NR)","cost_of_default(R)","cost_of_no_default")
-ne_plot <- melt(ne_plot, id="negative_equity")
-names(ne_plot)[3]<-"cost"
+ne_plot2 <- as.data.frame(ne_plot2)
+names(ne_plot2) <- c("negative_equity","cost_of_default(R)","cost_of_no_default")
+ne_plot2 <- melt(ne_plot2, id="negative_equity")
+names(ne_plot2)[3]<-"cost"
+
 
 ne = c(-0.25)
-app_rate = seq(from=-10,to=10,by=0.5)
+app_rate = seq(from=-5,to=5,by=0.5)
 app_rate_plot <- NULL
 for(house_appreciation in app_rate)  {
   current_housevalue = outstanding_start/(1-ne)
   housevalue_end = current_housevalue*(1+house_appreciation/1200)^time_horizen  
   if(outstanding_end>housevalue_end) {
     cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)
-    cost_of_default_r = cost_of_default+(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
+    cost_of_default_r = cost_of_default+recourse_recovery*(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
   } 
   else {
     cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)+(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
@@ -205,6 +227,7 @@ names(app_rate_plot) <- c("house_appreciation","cost_of_default(NR)","cost_of_de
 app_rate_plot <- melt(app_rate_plot, id="house_appreciation")
 names(app_rate_plot)[3]<-"cost"
 
+rent = 1800
 ne = -0.5
 house_appreciation = 0
 ft = seq(from=8,to=24,by=0.5)
@@ -215,7 +238,7 @@ for(forc_time in ft)  {
   housevalue_end = current_housevalue*(1+house_appreciation/1200)^time_horizen  
   if(outstanding_end>housevalue_end) {
     cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)
-    cost_of_default_r = cost_of_default+(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
+    cost_of_default_r = cost_of_default+recourse_recovery*(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
   } 
   else {
     cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)+(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
@@ -243,7 +266,7 @@ for(time_horizen in rt)  {
   housevalue_end = current_housevalue*(1+house_appreciation/1200)^time_horizen  
   if(outstanding_end>housevalue_end) {
     cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)
-    cost_of_default_r = cost_of_default+(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
+    cost_of_default_r = cost_of_default+recourse_recovery*(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
   } 
   else {
     cost_of_nodefault = pv(r=interestrate/1200,pmt = -mpay,n = time_horizen)+(outstanding_end-housevalue_end)/((1+interestrate/1200)^time_horizen)
@@ -266,12 +289,19 @@ p0 <- ggplot(data=ne_plot0,aes(x=negative_equity, y=cost, colour=variable)) +  g
 p1 <- ggplot(data=app_rate_plot,aes(x=house_appreciation, y=cost, colour=variable)) +  geom_line(aes(linetype=variable), size=2)+
   theme(legend.position="bottom",legend.direction="horizontal",legend.title=element_blank())+
   xlab("House Value Appreciation Rate (%)") + ylab("Cost ($)")+
-  annotate("text", x = 5, y = 175000, label = "Negative Equity: -25%", size = 3)
+  annotate("text", x = 2.5, y = 110000, label = "Negative Equity: -25%", size = 3)
 
-p2 <- ggplot(data=ne_plot,aes(x=negative_equity, y=cost, colour=variable)) +  geom_line(aes(linetype=variable), size=2)+
+p2_1 <- ggplot(data=ne_plot,aes(x=negative_equity, y=cost, colour=variable)) +  geom_line(aes(linetype=variable), size=2)+
   theme(legend.position="bottom",legend.direction="horizontal",legend.title=element_blank())+
-  xlab("Negative Equity") + ylab("Cost ($)")+
-  annotate("text", x = -0.25, y = 150000, label = "House Price Appreciation: 2%", size = 3)
+  xlab("Negative Equity") + ylab("Cost ($)")#+
+  #annotate("text", x = -0.25, y = 110000, label = "House Price Appreciation: 2%", size = 3)
+
+p2_2 <- ggplot(data=ne_plot2,aes(x=negative_equity, y=cost, colour=variable)) +  geom_line(aes(linetype=variable), size=2)+
+  theme(legend.position="bottom",legend.direction="horizontal",legend.title=element_blank())+
+  xlab("Negative Equity") + ylab("Cost ($)")#+
+  #annotate("text", x = -0.25, y = 110000, label = "House Price Appreciation: 2%", size = 3)
+
+
 
 p3 <- ggplot(data=forc_time_plot,aes(x=forc_time, y=cost, colour=variable)) +  geom_line(aes(linetype=variable), size=2)+
   theme(legend.position="bottom",legend.direction="horizontal",legend.title=element_blank())+
@@ -286,6 +316,6 @@ p4 <- ggplot(data=rt_plot,aes(x=remaining_time, y=cost, colour=variable)) +  geo
 
 p0 
 
-multiplot(p2, p1, cols=2)
+multiplot(p2_1, p2_2, cols=2)
 
 multiplot(p3, p4, cols=2)
