@@ -1,0 +1,77 @@
+---
+title: "rent_forc"
+author: "DC & DR"
+date: "November 10, 2016"
+output: html_document
+---
+
+
+```{r warning=FALSE}
+rm(list=ls())
+library(stargazer)
+library(plyr)
+library(plm)
+library(zoo)
+file_path = "E:/strategic_default/"
+setwd(file_path)
+source("functions.R")
+output.type = "html"
+
+rent <- read.csv("Zip_MedianRentalPrice_Sfr.csv")
+rent <- data.frame(rent[1], stack(rent[7:ncol(rent)]))
+rent['ind']<- as.Date(paste(substr(rent$ind,2,5),substr(rent$ind,7,8),"01",sep = "-"))
+rent['ind'] <- as.double(as.yearqtr(rent$ind))
+names(rent)<-c("zip","rent","qt")
+rent['zip']<-(rent$zip %/% 100)*100
+rent <- ddply(rent,.(zip,qt),summarise,rent=median(rent,na.rm = TRUE))
+
+zips <- unique(rent$zip)
+
+hpi <- read.csv("HPI3zip.csv")
+hpi$zip <- hpi$zip/10
+hpi['qt']<- as.double(as.yearqtr(as.Date(hpi$yearquarter,origin="1900-01-01")))
+hpi <- hpi[hpi$zip %in% zips,]
+hpi <- hpi[hpi$qt >1995,]
+hpi$yearquarter <- NULL
+
+
+unemp <- readRDS("zipunemp.rds")
+names(unemp)<-c("qt","zip","unemp")
+unemp['qt']<- as.double(as.yearqtr(unemp$qt))
+unemp <- unemp[unemp$zip %in% zips,]
+unemp <- unemp[unemp$qt >1995,]
+unemp <- ddply(unemp,.(zip,qt),summarise,unemp=median(unemp,na.rm = TRUE))
+
+
+rent_panel <- merge(hpi,rent, by=c("zip","qt"))
+rent_panel <- merge(rent_panel,unemp, by=c("zip","qt"))
+rent_panel <- pdata.frame(rent_panel, index = c("zip", "qt"))
+rent_panel['rent_diff'] <- diff(rent_panel$rent)
+rent_panel['rent_lag'] <- lag(rent_panel$rent,1)
+rent_panel['index_diff'] <- lag(rent_panel$index,1)-lag(rent_panel$index,6)
+rent_panel['index_diff_3'] <- lag(rent_panel$index,3)-lag(rent_panel$index,9)
+rent_panel['index_diff_6'] <- lag(rent_panel$index,7)-lag(rent_panel$index,13)
+rent_panel['unemp_diff'] <- lag(rent_panel$unemp,1)-lag(rent_panel$unemp,6)
+rent_panel['unemp_diff_3'] <- lag(rent_panel$unemp,3)-lag(rent_panel$unemp,9)
+rent_panel['unemp_diff_6'] <- lag(rent_panel$unemp,7)-lag(rent_panel$unemp,13)
+
+formula_list <- list()
+ols_list <- list()
+
+
+formula_list[[1]] <- as.formula("rent_diff~index_diff_3")
+formula_list[[2]] <- as.formula("rent_diff~index_diff_6")
+formula_list[[3]] <- as.formula("rent_diff~unemp_diff_3")
+formula_list[[4]] <- as.formula("rent_diff~unemp_diff_6")
+
+ols_list[[1]]<-lm(formula_list[[1]],data=rent_panel)
+ols_list[[2]]<-lm(formula_list[[2]],data=rent_panel)
+ols_list[[3]]<-lm(formula_list[[3]],data=rent_panel)
+ols_list[[4]]<-lm(formula_list[[4]],data=rent_panel)
+
+
+
+stargazer(ols_list, type = output.type,no.space=TRUE,star.cutoffs = c(0.05))
+
+```
+
