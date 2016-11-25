@@ -44,9 +44,8 @@ setkeyv(hpiorg,c('org_q','zip'))
 
 unemp <- readRDS("zipunemp.rds")
 names(unemp)<-c("reportingperiod_t","zip","del_unemp")
-pefdata$reportingperiod_t <- as.Date(pefdata$reportingperiod_t)
-pefdata <- merge(pefdata,unemp,by=c("reportingperiod_t","zip"),all.x = TRUE)
-unemp<-NULL
+unemp['ne_qt'] <- as.double(as.yearqtr(unemp$reportingperiod_t))
+unemp$reportingperiod_t <- NULL
 
 # Source: https://www.ffiec.gov/hmda/hmdaflat.htm and seach: Mortgage Lending Assessment Data File, 200X in https://catalog.archives.gov/
 lardata <-readRDS("censusdata_zip_Aug232016.rds")
@@ -116,6 +115,7 @@ generate_sample <- function(cut)  {
       
       # generating loanmonth dataset when cut == 0
       if(cut==0)  {
+          cat("loanmonth","\n")
           pefdata_lm <- sqldf(paste("select pd1.* from pefdata as pd1 
                                  JOIN
                                  (select *,min(reportingperiod_t) as start from pefdata where current_equity<=",ne_cut," group by loanid) as pd2 ON pd1.loanid=pd2.loanid AND pd1.reportingperiod_t>=pd2.start where pd1.delstatus_t in (0,1)",sep=""))
@@ -176,7 +176,7 @@ generate_sample <- function(cut)  {
   pefdata['judicial']<-ifelse(pefdata$state %in% judicial,1,0)
   pefdata['recourse']<-ifelse(pefdata$state %in% nonrecourse,0,1)
   
-  pefdata['year']<-format(as.Date(pefdata$orgdate),'%Y')
+  pefdata['year']<-format(as.Date(pefdata$reportingperiod_t),'%Y')
   pefdata <- merge(pefdata,lardata,by=c("year","zip"),all.x = TRUE)
   
   pefdata$current_equity <- ifelse(is.infinite(pefdata$current_equity),NA,pefdata$current_equity)
@@ -185,6 +185,7 @@ generate_sample <- function(cut)  {
   
   pefdata['ne_qt']<-as.double(as.yearqtr(pefdata$reportingperiod_t))
   pefdata <- merge(pefdata,rent,by=c("ne_qt","zip"))
+  pefdata <- merge(pefdata,unemp,by=c("ne_qt","zip"))
   #pefdata['ne_year']<-format(pefdata$reportingperiod_t,"%Y")
   
   med_housevalue <- ddply(pefdata,.(reportingperiod_t,zip),summarise,med_housevalue=median(current_housevalue,na.rm = TRUE))
@@ -193,12 +194,12 @@ generate_sample <- function(cut)  {
   pefdata['adjusted_mpay_rent']<-pefdata$mpay/pefdata$adjusted_rent
   pefdata['ne_cutoff']<-ne_cut
   
-  fn_cox_out = paste("cox_ne_",ne_cut,"_Oct142016.rds",sep="")
+  fn_cox_out = paste("cox_ne_",ne_cut,"_Nov232016.rds",sep="")
   saveRDS(pefdata,file=fn_cox_out)
   
 }
 
-cuts <- c(-0.1)
+cuts <- c(-0.1,-0.3,-0.4,-0.6,-0.7)
 
 for(c in cuts) {
   generate_sample(c)
