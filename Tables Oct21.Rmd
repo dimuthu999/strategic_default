@@ -1,6 +1,6 @@
 ---
 title: "Strategic Default"
-date: "October 24♦, 2016"
+date: "October 24, 2016"
 output: 
   html_document: 
     css: bodycss.css
@@ -9,7 +9,6 @@ output:
     toc: yes
 ---
 
-Using zillow rent.
 
 ```{r warning=FALSE,message=FALSE}
 rm(list=ls())
@@ -56,7 +55,7 @@ stargazer(
 
 
 ### mpay_rent map
-```{r}
+```{r warning=FALSE}
 require(RCurl)
 require(xlsx)
 require(zipcode)
@@ -116,15 +115,15 @@ qplot(zillow_zip$mpay_minus_rent, geom="histogram", main = "Histogram for Mortga
 ### Main Cox Model: All variables
 ```{r results='asis'}
 
-cox_formula_1 <- as.formula("Surv(duration,def)~adjusted_mpay_rent+median_forc_time+age_t+factor(ne_year)+factor(recourse)+factor(ne_cutoff)+log(upb)/ltv")
+cox_formula_1 <- as.formula("Surv(duration,def)~adjusted_mpay_rent+interestrate+median_forc_time+age_t+factor(ne_year)+factor(recourse)+factor(ne_cutoff)+log(upb)/ltv+I(interestrate==interestrate_t)")
 
-cox_formula_2 <- as.formula("Surv(duration,def)~adjusted_mpay_rent+median_forc_time+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)+log(upb)/ltv")
+cox_formula_2 <- as.formula("Surv(duration,def)~adjusted_mpay_rent+median_forc_time+interestrate+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(state)+factor(ne_cutoff)+log(upb)/ltv+I(interestrate==interestrate_t)")
 
 cox <-list()
 cox[[1]] <- coxph(cox_formula_1,data = zillow_cox)
 cox[[2]] <- coxph(cox_formula_2,data = zillow_cox)
 
-stargazer(cox, omit = c("ne_year","loanpurpose","occupancy","ne_cutoff"),omit.labels = c("Year","","",""),type = output.type,no.space=TRUE)
+stargazer(cox, omit = c("ne_year","loanpurpose","occupancy","ne_cutoff","state"),omit.labels = c("Year","","","",""),type = output.type,no.space=TRUE)
 ```
 
 
@@ -132,7 +131,7 @@ stargazer(cox, omit = c("ne_year","loanpurpose","occupancy","ne_cutoff"),omit.la
 ```{r}
 
 # adjusted_mpay_rent polynomial
-cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+median_forc_time+age_t+I(median_forc_time^2)+I(median_forc_time^3)+I(median_forc_time^4)+I(median_forc_time^5)+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+log(upb)+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)+log(upb)/ltv")
+cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+median_forc_time+age_t+I(median_forc_time^2)+I(median_forc_time^3)+I(median_forc_time^4)+I(median_forc_time^5)+interestrate+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+log(upb)+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)+log(upb)/ltv+I(interestrate==interestrate_t)")
 
 cox <- coxph(cox_formula,data = zillow_cox)
 
@@ -146,7 +145,7 @@ ggplot(plot_data,aes(x=x,y=y))+geom_point()+
 
 
 # median_forc_time polynomial
-cox_formula <- as.formula("Surv(duration,def)~median_forc_time+I(median_forc_time^2)+I(median_forc_time^3)+I(median_forc_time^4)+I(median_forc_time^5)+adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)+log(upb)/ltv")
+cox_formula <- as.formula("Surv(duration,def)~median_forc_time+I(median_forc_time^2)+I(median_forc_time^3)+I(median_forc_time^4)+I(median_forc_time^5)+adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+age_t+age_t*age_t+del_unemp+factor(state)+factor(ne_year)+fico+ltv+dti+log(upb)+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+factor(ne_cutoff)+log(upb)/ltv+I(interestrate==interestrate_t)")
 
 cox <- coxph(cox_formula,data = zillow_cox)
 
@@ -166,7 +165,7 @@ ggplot(plot_data,aes(x=x,y=y))+geom_point()+
 ne_cuts <- c(0,-0.1,-0.2,-0.3,-0.4,-0.5,-0.6,-0.7)
 i=1
 
-cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+poly(mean_forc_time,5)+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+log(upb)+log(medhhincome)+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(rec_state)+log(upb)/ltv")
+cox_formula <- as.formula("Surv(duration,def)~adjusted_mpay_rent+median_forc_time+age_t+interestrate+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+log(upb)+log(medhhincome)+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(state)+log(upb)/ltv+I(interestrate==interestrate_t)")
 
 cox<-list()
 cox_coefficients <- NULL
@@ -273,9 +272,13 @@ self_cure_data <- merge(self_cure_data,zip_forc_time,by="zip",all.x = TRUE)
 stargazer(self_cure_data[,c("upb","fico","ltv","interestrate","adjusted_mpay_rent","selfcure","year","median_forc_time")], type = output.type,  summary.stat = c("mean", "sd","min", "p25", "median", "p75", "max","n")
 )
 
-cox_formula_1 <- as.formula("Surv(duration,selfcure)~adjusted_mpay_rent+median_forc_time+age_t+factor(ne_year)+factor(recourse)+log(upb)/ltv")
 
-cox_formula_2 <- as.formula("Surv(duration,selfcure)~adjusted_mpay_rent+median_forc_time+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+log(upb)/ltv")
+self_cure_data['current_equity_cat'] <- cut(self_cure_data$current_equity, breaks = seq(from=-2,to=2,by=0.3))
+#self_cure_data['current_equity_cat'] <- ifelse(self_cure_data$current_equity<=-0.5,"-fifty",                                               ifelse(self_cure_data$current_equity<=-0.2,"-twenty",                                                      ifelse(self_cure_data$current_equity<=0,"zero","positive")))
+
+cox_formula_1 <- as.formula("Surv(duration,selfcure)~adjusted_mpay_rent+median_forc_time+current_equity+age_t+factor(ne_year)+factor(recourse)+log(upb)/ltv+interestrate+I(interestrate==interestrate_t)")
+
+cox_formula_2 <- as.formula("Surv(duration,selfcure)~adjusted_mpay_rent+median_forc_time+current_equity+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+factor(occupancy)+factor(loanpurpose)+factor(recourse)+log(upb)/ltv+interestrate+I(interestrate==interestrate_t)")
 
 cox <-list()
 marginal_effects <- list()
@@ -284,18 +287,18 @@ cox[[1]] <- coxph(cox_formula_1,data = self_cure_data)
 cox[[2]] <- coxph(cox_formula_2,data = self_cure_data)
   marginal_effects[[2]]<-(exp(as.numeric(cox[[2]]$coefficients[1]))-1)*sd(self_cure_data$adjusted_mpay_rent)
 
-stargazer(cox, omit = c("ne_year","loanpurpose","occupancy"),omit.labels = c("Year","",""),type = output.type,no.space=TRUE)
+stargazer(cox, omit = c("ne_year","loanpurpose","occupancy","current_equity_cat"),omit.labels = c("Year","Purpose","Occupancy","Current Equity"),type = output.type,no.space=TRUE)
 
 marginal_effects
 ```
 
 ### Self cure polynomial
 ```{r results='asis',warning=FALSE}
-cox_formula <- as.formula("Surv(duration,selfcure)~adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+median_forc_time+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+medhhincome+medhouseage+vacantpct+bachelorpct+withsalarypct+factor(occupancy)+factor(loanpurpose)+factor(recourse)+log(upb)/ltv")
+cox_formula <- as.formula("Surv(duration,selfcure)~adjusted_mpay_rent+I(adjusted_mpay_rent^2)+I(adjusted_mpay_rent^3)+I(adjusted_mpay_rent^4)+I(adjusted_mpay_rent^5)+median_forc_time+current_equity+age_t+age_t*age_t+del_unemp+factor(ne_year)+fico+ltv+dti+factor(occupancy)+factor(loanpurpose)+factor(recourse)+log(upb)/ltv+interestrate+I(interestrate==interestrate_t)")
 
 cox <- coxph(cox_formula,data = self_cure_data)
 
-x = (40:160)/100
+x = (60:160)/100
 y = (summary(cox)$coefficients)[1,1] * x +(summary(cox)$coefficients)[2,1] * x^2 +(summary(cox)$coefficients)[3,1] * x^3 +(summary(cox)$coefficients)[4,1] * x^4 +(summary(cox)$coefficients)[5,1] * x^5
 plot_data <- as.data.frame(cbind(x,y))
 
