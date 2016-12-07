@@ -65,6 +65,7 @@ h6 {
 }
 </style>
 
+<link href="data:text/css,body%20%2Emain%2Dcontainer%20%7B%0Amax%2Dwidth%3A%201500px%3B%0A%7D" rel="stylesheet" type="text/css" />
 
 </head>
 
@@ -118,49 +119,20 @@ $(document).ready(function () {
 
 </div>
 
+<div id="TOC">
+<ul>
+<li><a href="#strategic-default">Strategic Default</a></li>
+<li><a href="#self-cure">Self-cure</a></li>
+</ul>
+</div>
 
-<pre><code>## 
-## Attaching package: 'zoo'</code></pre>
-<pre><code>## The following objects are masked from 'package:base':
-## 
-##     as.Date, as.Date.numeric</code></pre>
-<pre><code>## Warning: package 'sqldf' was built under R version 3.2.5</code></pre>
-<pre><code>## Loading required package: gsubfn</code></pre>
-<pre><code>## Warning: package 'gsubfn' was built under R version 3.2.5</code></pre>
-<pre><code>## Loading required package: proto</code></pre>
-<pre><code>## Loading required package: RSQLite</code></pre>
-<pre><code>## Warning: package 'RSQLite' was built under R version 3.2.5</code></pre>
-<pre><code>## 
-## Please cite as:</code></pre>
-<pre><code>##  Hlavac, Marek (2015). stargazer: Well-Formatted Regression and Summary Statistics Tables.</code></pre>
-<pre><code>##  R package version 5.2. http://CRAN.R-project.org/package=stargazer</code></pre>
-<pre><code>## 
-## Attaching package: 'reshape2'</code></pre>
-<pre><code>## The following objects are masked from 'package:data.table':
-## 
-##     dcast, melt</code></pre>
-<pre><code>## Warning: package 'zipcode' was built under R version 3.2.5</code></pre>
-<pre><code>## Warning: package 'ggplot2' was built under R version 3.2.5</code></pre>
-<pre><code>## Warning: package 'sandwich' was built under R version 3.2.5</code></pre>
-<pre><code>## 
-## Attaching package: 'psych'</code></pre>
-<pre><code>## The following objects are masked from 'package:ggplot2':
-## 
-##     %+%, alpha</code></pre>
-<div id="matching-high-mpay-rent" class="section level4">
-<h4>Matching high mpay rent</h4>
+<div id="strategic-default" class="section level3">
+<h3>Strategic Default</h3>
+<div id="matching-trhigh-mpay-rent" class="section level4">
+<h4>Matching Tr=high mpay rent</h4>
 <p>Using mortgages that have negative equity of 20%, for each three digit <b>zipcode-year</b> the mortgages that have adjusted mpay rent between 80th and 90th percentiles are matched with mortgages that have adjusted mpay rent between 10th and 35th percentile. We expect the default rate of the mortgages in the high adjusted mpay rent sample to be higher than the matched mortgages in the low adjusted mpay rent.</p>
-<pre class="r"><code>library(Matching)</code></pre>
-<pre><code>## Loading required package: MASS</code></pre>
-<pre><code>## ## 
-## ##  Matching (Version 4.8-3.4, Build Date: 2013/10/28)
-## ##  See http://sekhon.berkeley.edu/matching for additional documentation.
-## ##  Please cite software as:
-## ##   Jasjeet S. Sekhon. 2011. ``Multivariate and Propensity Score Matching
-## ##   Software with Automated Balance Optimization: The Matching package for R.''
-## ##   Journal of Statistical Software, 42(7): 1-52. 
-## ##</code></pre>
-<pre class="r"><code>library(plyr)
+<pre class="r"><code>library(Matching)
+library(plyr)
 setwd(file_path)
 zillow_cox &lt;- readRDS(file=&quot;zillow_cox.rds&quot;)
 
@@ -185,12 +157,12 @@ for(ne_cut in ne_cuts) {
     low_mpay_rent['high_mpay_rent'] &lt;- 0
     
     temp &lt;- rbind(high_mpay_rent,low_mpay_rent)
-    temp &lt;- temp[!is.na(temp$ltv) &amp; !is.na(temp$upb) &amp; !is.na(temp$fico) &amp; !is.na(temp$dti) &amp; !is.na(temp$interestrate),]
+    temp &lt;- temp[!is.na(temp$ltv) &amp; !is.na(temp$current_housevalue) &amp; !is.na(temp$fico) &amp; !is.na(temp$dti) &amp; !is.na(temp$interestrate) &amp; !is.na(temp$age_t),]
     
     Tr &lt;- temp$high_mpay_rent
     Y &lt;- temp$def
     
-    glm_prop &lt;- glm(Tr~fico+ltv+dti+upb+interestrate,data=temp,family = 'binomial')
+    glm_prop &lt;- glm(Tr~fico+ltv+dti+current_housevalue+interestrate+age_t,data=temp,family = 'binomial')
     propensity &lt;- Match(Y=Y,Tr=Tr,X=glm_prop$fitted.values,replace=FALSE)
     
     estimate &lt;- as.vector(propensity$est)
@@ -253,16 +225,16 @@ N
 0
 </td>
 <td>
-0.060
+0.053
 </td>
 <td>
-2.732
+2.253
 </td>
 <td>
-0.004
+0.013
 </td>
 <td>
-144
+143
 </td>
 </tr>
 <tr>
@@ -273,13 +245,13 @@ N
 -0.200
 </td>
 <td>
-0.126
+0.122
 </td>
 <td>
-3.866
+3.799
 </td>
 <td>
-0.0001
+0.0002
 </td>
 <td>
 91
@@ -293,16 +265,16 @@ N
 -0.400
 </td>
 <td>
-0.075
+0.066
 </td>
 <td>
-1.719
+1.443
 </td>
 <td>
-0.046
+0.078
 </td>
 <td>
-58
+55
 </td>
 </tr>
 <tr>
@@ -310,6 +282,158 @@ N
 </td>
 </tr>
 </table>
+</div>
+<div id="matching-tr-low-mpay-rent" class="section level4">
+<h4>Matching Tr= low mpay rent</h4>
+<p>0-0.2-0.4</p>
+<p>‘Avg(high def - low def)’ gives the average of differences in default rate for high and low mpay rent sample for each zip code. ‘t-stat: mu&gt; 0’ is the t-stat of the t-test</p>
+<pre class="r"><code>stargazer(results,summary = FALSE,type=output.type)</code></pre>
+<table style="text-align:center">
+<tr>
+<td colspan="6" style="border-bottom: 1px solid black">
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+</td>
+<td>
+NE Cut
+</td>
+<td>
+Avg(high def - low def)
+</td>
+<td>
+t-stat: mu&gt; 0
+</td>
+<td>
+p value: mu&gt; 0
+</td>
+<td>
+N
+</td>
+</tr>
+<tr>
+<td colspan="6" style="border-bottom: 1px solid black">
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+1
+</td>
+<td>
+0
+</td>
+<td>
+-0.050
+</td>
+<td>
+-1.956
+</td>
+<td>
+0.027
+</td>
+<td>
+141
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+2
+</td>
+<td>
+-0.200
+</td>
+<td>
+-0.082
+</td>
+<td>
+-2.207
+</td>
+<td>
+0.016
+</td>
+<td>
+82
+</td>
+</tr>
+<tr>
+<td style="text-align:left">
+3
+</td>
+<td>
+-0.400
+</td>
+<td>
+-0.037
+</td>
+<td>
+-0.802
+</td>
+<td>
+0.214
+</td>
+<td>
+53
+</td>
+</tr>
+<tr>
+<td colspan="6" style="border-bottom: 1px solid black">
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div id="self-cure" class="section level3">
+<h3>Self-cure</h3>
+<pre class="r"><code>self_cure_data &lt;- readRDS(paste(file_path,&quot;self_cure_sample_Nov242016.rds&quot;,sep=&quot;&quot;))
+
+self_cure_data['def_year'] &lt;- format(self_cure_data$reportingperiod_t,&quot;%Y&quot;)
+
+zip_count &lt;- ddply(self_cure_data[!is.na(self_cure_data$adjusted_mpay_rent),],.(zip,def_year),summarise, obs = length(loanid))
+zip_count &lt;- zip_count[zip_count$obs&gt;=50,]
+
+  
+  
+t_test_results &lt;- NULL
+for(i in 1:nrow(zip_count)) {
+  zip &lt;- zip_count[i,]$zip
+  def_year &lt;- zip_count[i,]$def_year
+  #cat(zip,&quot; &quot;, def_year,&quot;\n&quot;)
+  temp &lt;- self_cure_data[self_cure_data$zip == zip &amp; self_cure_data$def_year == def_year  &amp; !is.na(self_cure_data$adjusted_mpay_rent),]
+    
+  high_mpay_rent &lt;- temp[temp$adjusted_mpay_rent &lt;= quantile(temp$adjusted_mpay_rent,0.95,na.rm = TRUE) &amp; temp$adjusted_mpay_rent &gt;= quantile(temp$adjusted_mpay_rent,0.80,na.rm = TRUE),]
+  high_mpay_rent['high_mpay_rent'] &lt;- 1
+  low_mpay_rent &lt;- temp[temp$adjusted_mpay_rent &lt;= quantile(temp$adjusted_mpay_rent,0.35,na.rm = TRUE) &amp; temp$adjusted_mpay_rent &gt;= quantile(temp$adjusted_mpay_rent,0.05,na.rm = TRUE),]
+  low_mpay_rent['high_mpay_rent'] &lt;- 0
+  
+  temp &lt;- rbind(high_mpay_rent,low_mpay_rent)
+  temp &lt;- temp[!is.na(temp$ltv) &amp; !is.na(temp$upb) &amp; !is.na(temp$fico) &amp; !is.na(temp$dti) &amp; !is.na(temp$interestrate) &amp; !is.na(temp$current_equity),]
+  
+  Tr &lt;- temp$high_mpay_rent
+  Y &lt;- temp$selfcure
+  
+  glm_prop &lt;- glm(Tr~fico+ltv+dti+upb+interestrate+current_equity,data=temp,family = 'binomial')
+  propensity &lt;- Match(Y=Y,Tr=Tr,X=glm_prop$fitted.values,replace=FALSE)
+  
+  estimate &lt;- as.vector(propensity$est)
+  t_stat &lt;- NA
+  se = as.vector(propensity$se.standard)
+  if(se!= 0) t_stat &lt;- estimate/se
+  
+  t_test_results &lt;- rbind(t_test_results,c(zip,def_year,estimate,t_stat))
+  
+}
+
+t_test_results &lt;- as.data.frame(t_test_results)
+names(t_test_results) &lt;- c(&quot;zip&quot;,&quot;def_year&quot;,&quot;estimate&quot;,&quot;t_stat&quot;)
+t_test_results$estimate &lt;- as.numeric(as.character(t_test_results$estimate))
+t_test_results$t_stat &lt;- as.numeric(as.character(t_test_results$t_stat))
+t_test_results &lt;- t_test_results[abs(t_test_results$t_stat)&gt;1.6,]
+t&lt;- t.test(t_test_results$estimate,mu = 0,alternative = &quot;less&quot;)</code></pre>
+<p>Here we are expecting a negative difference in the selfcure rate as high mpay rent should be less likely to selfcure</p>
+<pre class="r"><code>t</code></pre>
+<pre><code>One Sample t-test</code></pre>
+<p>data: t_test_results$estimate t = -8.0809, df = 247, p-value = 1.431e-14 alternative hypothesis: true mean is less than 0 95 percent confidence interval: -Inf -0.08837093 sample estimates: mean of x -0.1110625</p>
 </div>
 
 
