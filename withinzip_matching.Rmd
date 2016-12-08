@@ -1,0 +1,265 @@
+---
+title: "Within zipcode matching"
+output: 
+  html_document: 
+    css: bodycss.css
+    fig_height: 6
+    fig_width: 12
+    toc: yes
+---
+```{r echo=FALSE,warning=FALSE,message=FALSE}
+rm(list=ls())
+library(data.table)
+library(zoo)
+library(sqldf)
+library(stargazer)
+library(survival)
+library(reshape2)
+library(zipcode)
+library(ggplot2)
+library(sandwich)
+file_path = "E:/strategic_default/"
+
+source("functions.R")
+output.type = "html"
+```
+
+### Strategic Default
+#### Matching Tr=high mpay rent
+Using mortgages that have negative equity of 20%, for each three digit <b>zipcode-year</b> the mortgages that have adjusted mpay rent between 80th and 90th percentiles are matched with mortgages that have adjusted mpay rent between 10th and 35th percentile. We expect the default rate of the mortgages in the high adjusted mpay rent sample to be higher than the matched mortgages in the low adjusted mpay rent. 
+```{r warning=FALSE,results='asis',message=FALSE}
+library(Matching)
+library(plyr)
+setwd(file_path)
+zillow_cox <- readRDS(file="zillow_cox.rds")
+
+ne_cuts = c(0,-0.2,-0.4)
+results <- NULL
+for(ne_cut in ne_cuts) {  
+  cat(ne_cut)
+  zip_count <- ddply(zillow_cox[zillow_cox$ne_cutoff==ne_cut & !is.na(zillow_cox$adjusted_mpay_rent),],.(zip,ne_year),summarise, obs = length(loanid))
+  zip_count <- zip_count[zip_count$obs>=50,]
+  
+  
+  t_test_results <- NULL
+  for(i in 1:nrow(zip_count)) {
+    zip <- zip_count[i,]$zip
+    ne_year <- zip_count[i,]$ne_year
+    #cat(zip," ", ne_year,"\n")
+    temp <- zillow_cox[zillow_cox$zip == zip & zillow_cox$ne_year == ne_year & zillow_cox$ne_cutoff==ne_cut & !is.na(zillow_cox$adjusted_mpay_rent),]
+    
+    high_mpay_rent <- temp[temp$adjusted_mpay_rent <= quantile(temp$adjusted_mpay_rent,0.95,na.rm = TRUE) & temp$adjusted_mpay_rent >= quantile(temp$adjusted_mpay_rent,0.80,na.rm = TRUE),]
+    high_mpay_rent['high_mpay_rent'] <- 1
+    low_mpay_rent <- temp[temp$adjusted_mpay_rent <= quantile(temp$adjusted_mpay_rent,0.35,na.rm = TRUE) & temp$adjusted_mpay_rent >= quantile(temp$adjusted_mpay_rent,0.05,na.rm = TRUE),]
+    low_mpay_rent['high_mpay_rent'] <- 0
+    
+    temp <- rbind(high_mpay_rent,low_mpay_rent)
+    temp <- temp[!is.na(temp$ltv) & !is.na(temp$current_housevalue) & !is.na(temp$fico) & !is.na(temp$dti) & !is.na(temp$interestrate) & !is.na(temp$age_t),]
+    
+    Tr <- temp$high_mpay_rent
+    Y <- temp$def
+    
+    glm_prop <- glm(Tr~fico+ltv+dti+current_housevalue+interestrate+age_t,data=temp,family = 'binomial')
+    propensity <- Match(Y=Y,Tr=Tr,X=glm_prop$fitted.values,replace=FALSE)
+    
+    estimate <- as.vector(propensity$est)
+    t_stat <- NA
+    se = as.vector(propensity$se.standard)
+    if(se!= 0) t_stat <- estimate/se
+    
+    t_test_results <- rbind(t_test_results,c(zip,ne_year,estimate,t_stat))
+    
+    #summary(propensity)
+    #ddply(temp,.(high_mpay_rent),summarise,def=mean(def))
+    
+  }
+  
+  t_test_results <- as.data.frame(t_test_results)
+  names(t_test_results) <- c("zip","ne_year","estimate","t_stat")
+  t_test_results <- t_test_results[abs(t_test_results$t_stat)>1.6,]
+  t<- t.test(t_test_results$estimate,mu = 0,alternative = "greater")
+  
+  results <- rbind(results,c(ne_cut,as.vector(t$estimate),as.vector(t$statistic),as.vector(t$p.value),nrow(t_test_results)))
+}
+
+results <- as.data.frame(results)
+names(results) <- c("NE Cut","Avg(high def  - low def)","t-stat: mu>0","p value: mu>0","N")
+```
+
+'Avg(high def  - low def)' gives the average of differences in default rate for high and low mpay rent sample for each zip code. 't-stat: mu> 0' is the t-stat of the t-test
+```{r warning=FALSE,results='asis',message=FALSE}
+stargazer(results,summary = FALSE,type=output.type)
+
+```
+
+
+#### Matching Tr= low mpay rent
+ 
+```{r warning=FALSE,results='asis',message=FALSE,echo=FALSE}
+
+ne_cuts = c(0,-0.2,-0.4)
+results <- NULL
+for(ne_cut in ne_cuts) {  
+  cat(ne_cut)
+  zip_count <- ddply(zillow_cox[zillow_cox$ne_cutoff==ne_cut & !is.na(zillow_cox$adjusted_mpay_rent),],.(zip,ne_year),summarise, obs = length(loanid))
+  zip_count <- zip_count[zip_count$obs>=50,]
+  
+  
+  t_test_results <- NULL
+  for(i in 1:nrow(zip_count)) {
+    zip <- zip_count[i,]$zip
+    ne_year <- zip_count[i,]$ne_year
+    #cat(zip," ", ne_year,"\n")
+    temp <- zillow_cox[zillow_cox$zip == zip & zillow_cox$ne_year == ne_year & zillow_cox$ne_cutoff==ne_cut & !is.na(zillow_cox$adjusted_mpay_rent),]
+    
+    high_mpay_rent <- temp[temp$adjusted_mpay_rent <= quantile(temp$adjusted_mpay_rent,0.95,na.rm = TRUE) & temp$adjusted_mpay_rent >= quantile(temp$adjusted_mpay_rent,0.65,na.rm = TRUE),]
+    high_mpay_rent['high_mpay_rent'] <- 1
+    low_mpay_rent <- temp[temp$adjusted_mpay_rent <= quantile(temp$adjusted_mpay_rent,0.15,na.rm = TRUE) & temp$adjusted_mpay_rent >= quantile(temp$adjusted_mpay_rent,0.05,na.rm = TRUE),]
+    low_mpay_rent['high_mpay_rent'] <- 0
+    
+    temp <- rbind(high_mpay_rent,low_mpay_rent)
+    temp <- temp[!is.na(temp$ltv) & !is.na(temp$current_housevalue) & !is.na(temp$fico) & !is.na(temp$dti) & !is.na(temp$interestrate)& !is.na(temp$age_t),]
+    
+    Tr <- 1-temp$high_mpay_rent
+    Y <- temp$def
+    
+    glm_prop <- glm(Tr~fico+ltv+dti+current_housevalue+interestrate+age_t,data=temp,family = 'binomial')
+    propensity <- Match(Y=Y,Tr=Tr,X=glm_prop$fitted.values,replace=FALSE)
+    
+    estimate <- as.vector(propensity$est)
+    t_stat <- NA
+    se = as.vector(propensity$se.standard)
+    if(se!= 0) t_stat <- estimate/se
+    
+    t_test_results <- rbind(t_test_results,c(zip,ne_year,estimate,t_stat))
+    
+    #summary(propensity)
+    #ddply(temp,.(high_mpay_rent),summarise,def=mean(def))
+    
+  }
+  
+  t_test_results <- as.data.frame(t_test_results)
+  names(t_test_results) <- c("zip","ne_year","estimate","t_stat")
+  t_test_results <- t_test_results[abs(t_test_results$t_stat)>1.6,]
+  t<- t.test(t_test_results$estimate,mu = 0,alternative = "less")
+  
+  results <- rbind(results,c(ne_cut,as.vector(t$estimate),as.vector(t$statistic),as.vector(t$p.value),nrow(t_test_results)))
+}
+
+results <- as.data.frame(results)
+names(results) <- c("NE Cut","Avg(high def  - low def)","t-stat: mu>0","p value: mu>0","N")
+```
+
+'Avg(high def  - low def)' gives the average of differences in default rate for high and low mpay rent sample for each zip code. 't-stat: mu> 0' is the t-stat of the t-test
+```{r warning=FALSE,results='asis',message=FALSE}
+stargazer(results,summary = FALSE,type=output.type)
+
+```
+
+### Self-cure
+
+```{r warning=FALSE,results='asis',message=FALSE}
+self_cure_data <- readRDS(paste(file_path,"self_cure_sample_Nov242016.rds",sep=""))
+
+self_cure_data['def_year'] <- format(self_cure_data$reportingperiod_t,"%Y")
+
+zip_count <- ddply(self_cure_data[!is.na(self_cure_data$adjusted_mpay_rent),],.(zip,def_year),summarise, obs = length(loanid))
+zip_count <- zip_count[zip_count$obs>=50,]
+
+  
+  
+t_test_results <- NULL
+for(i in 1:nrow(zip_count)) {
+  zip <- zip_count[i,]$zip
+  def_year <- zip_count[i,]$def_year
+  #cat(zip," ", def_year,"\n")
+  temp <- self_cure_data[self_cure_data$zip == zip & self_cure_data$def_year == def_year  & !is.na(self_cure_data$adjusted_mpay_rent),]
+    
+  high_mpay_rent <- temp[temp$adjusted_mpay_rent <= quantile(temp$adjusted_mpay_rent,0.95,na.rm = TRUE) & temp$adjusted_mpay_rent >= quantile(temp$adjusted_mpay_rent,0.80,na.rm = TRUE),]
+  high_mpay_rent['high_mpay_rent'] <- 1
+  low_mpay_rent <- temp[temp$adjusted_mpay_rent <= quantile(temp$adjusted_mpay_rent,0.35,na.rm = TRUE) & temp$adjusted_mpay_rent >= quantile(temp$adjusted_mpay_rent,0.05,na.rm = TRUE),]
+  low_mpay_rent['high_mpay_rent'] <- 0
+  
+  temp <- rbind(high_mpay_rent,low_mpay_rent)
+  temp <- temp[!is.na(temp$ltv) & !is.na(temp$upb) & !is.na(temp$fico) & !is.na(temp$dti) & !is.na(temp$interestrate) & !is.na(temp$current_equity),]
+  
+  Tr <- temp$high_mpay_rent
+  Y <- temp$selfcure
+  
+  glm_prop <- glm(Tr~fico+ltv+dti+upb+interestrate+current_equity,data=temp,family = 'binomial')
+  propensity <- Match(Y=Y,Tr=Tr,X=glm_prop$fitted.values,replace=FALSE)
+  
+  estimate <- as.vector(propensity$est)
+  t_stat <- NA
+  se = as.vector(propensity$se.standard)
+  if(se!= 0) t_stat <- estimate/se
+  
+  t_test_results <- rbind(t_test_results,c(zip,def_year,estimate,t_stat))
+  
+}
+
+t_test_results <- as.data.frame(t_test_results)
+names(t_test_results) <- c("zip","def_year","estimate","t_stat")
+t_test_results$estimate <- as.numeric(as.character(t_test_results$estimate))
+t_test_results$t_stat <- as.numeric(as.character(t_test_results$t_stat))
+t_test_results <- t_test_results[abs(t_test_results$t_stat)>1.6,]
+t<- t.test(t_test_results$estimate,mu = 0,alternative = "less")
+```
+ Here we are expecting a negative difference in the selfcure rate as high mpay rent should be less likely to selfcure
+```{r warning=FALSE,message=FALSE}
+t
+```
+
+
+```{r  warning=FALSE,results='asis',message=FALSE}
+setwd(file_path)
+library(Matching)
+library(zoo)
+
+
+zillow_cox <- readRDS(file="zillow_cox.rds")
+temp <- zillow_cox[zillow_cox$ne_cutoff ==-0.2 & !is.na(zillow_cox$adjusted_mpay_rent),]
+temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff")]),]
+temp['org_qt']<-as.yearqtr(as.Date(as.character(temp$orgdate)))
+
+interestrate_zip <- readRDS("interestrate_zip.rds")
+temp <- merge(temp,interestrate_zip,by=c("zip","org_qt"),all.x = TRUE)
+temp['interest_diff'] <- (temp$interestrate - temp$interestrate_avg)/temp$interestrate_avg
+
+
+high_mpay_rent <- temp[temp$adjusted_mpay_rent <= quantile(temp$adjusted_mpay_rent,0.95,na.rm = TRUE) & temp$adjusted_mpay_rent >= quantile(temp$adjusted_mpay_rent,0.80,na.rm = TRUE),]
+high_mpay_rent['high_mpay_rent'] <- 1
+
+low_mpay_rent <- temp[temp$adjusted_mpay_rent <= quantile(temp$adjusted_mpay_rent,0.35,na.rm = TRUE) & temp$adjusted_mpay_rent >= quantile(temp$adjusted_mpay_rent,0.05,na.rm = TRUE),]
+low_mpay_rent['high_mpay_rent'] <- 0
+    
+temp <- rbind(high_mpay_rent,low_mpay_rent)
+temp <- temp[!is.na(temp$ltv) & !is.na(temp$current_housevalue) & !is.na(temp$fico) & !is.na(temp$dti) & !is.na(temp$interestrate) & !is.na(temp$age_t),]
+temp['current_hv_cat'] <- temp$current_housevalue %/% 25000
+    
+Tr <- temp$high_mpay_rent
+Y <- temp$def
+
+glm_prop <- glm(Tr~fico,data=temp,family = 'binomial')
+propensity <- Matchby(Y=Y,Tr=Tr,by=list(temp$zip,temp$current_hv_cat,temp$ne_qt),X=glm_prop$fitted.values,M=1,replace = FALSE)
+#propensity <- Match(Y=Y,Tr=Tr,X=glm_prop$fitted.values,M=1,replace = FALSE)
+
+summary(propensity)
+
+MatchBalance(Tr~age_t+adjusted_mpay_rent+adjusted_rent+dti+fico+ltv+interestrate+current_housevalue,match.out = propensity,nboots = 0,data=temp,paired = TRUE)
+
+
+
+sample_matched <-rbind(temp[propensity$index.treated,],temp[propensity$index.control,])
+
+logit <- list()
+logit[[1]] <- glm(def~factor(high_mpay_rent)+factor(zip)+factor(ne_year),data=sample_matched,family = 'binomial')
+logit[[2]] <- glm(def~factor(high_mpay_rent)+interest_diff+age_t+fico+ltv+dti+factor(occupancy)+factor(purpose)+factor(zip)+factor(ne_year),data=sample_matched,family = 'binomial')
+logit[[3]] <- glm(def~adjusted_mpay_rent+interest_diff+age_t+fico+ltv+dti+factor(occupancy)+factor(purpose)+factor(zip)+factor(ne_year),data=sample_matched,family = 'binomial')
+logit[[4]] <- glm(def~adjusted_mpay_rent2+interest_diff+age_t+fico+ltv+dti+factor(occupancy)+factor(purpose)+factor(zip)+factor(ne_year),data=sample_matched,family = 'binomial')
+
+stargazer(logit,type = output.type,no.space = TRUE,omit = c("zip","ne_year","ne_cutoff","occupancy","purpose"),omit.labels =  c("zip","ne year","ne cutoff","occupancy","purpose"))
+    
+    #summary(propensity)
+```
+
