@@ -211,8 +211,8 @@ stargazer(
 <pre class="r"><code>rm(allloans)
 gc()</code></pre>
 <pre><code>##            used  (Mb) gc trigger   (Mb)  max used   (Mb)
-## Ncells  2112947 112.9   27854852 1487.7  39469303 2107.9
-## Vcells 51819544 395.4  585450581 4466.7 914766533 6979.2</code></pre>
+## Ncells  2112949 112.9   27854852 1487.7  39469305 2107.9
+## Vcells 51819581 395.4  585450652 4466.7 914766644 6979.2</code></pre>
 </div>
 <div id="correlation" class="section level3">
 <h3>Correlation</h3>
@@ -389,8 +389,8 @@ stargazer(cox,type = output.type,no.space = TRUE,omit = c(&quot;state&quot;,&quo
 <pre class="r"><code>cox &lt;- NULL
 gc()</code></pre>
 <pre><code>##            used  (Mb) gc trigger   (Mb)  max used   (Mb)
-## Ncells  2265384 121.0   22283881 1190.1  39469303 2107.9
-## Vcells 64800638 494.4  468360464 3573.4 914766533 6979.2</code></pre>
+## Ncells  2265386 121.0   22283881 1190.1  39469305 2107.9
+## Vcells 64800675 494.4  468360521 3573.4 914766644 6979.2</code></pre>
 </div>
 <div id="alternative-measures-cox-ph" class="section level3">
 <h3>Alternative Measures: Cox PH</h3>
@@ -473,8 +473,8 @@ stargazer(cox,type = output.type,no.space = TRUE,omit = c(&quot;state&quot;,&quo
 <pre class="r"><code>cox &lt;- NULL
 gc()</code></pre>
 <pre><code>##            used  (Mb) gc trigger   (Mb)  max used   (Mb)
-## Ncells  2265773 121.1   17827104  952.1  39469303 2107.9
-## Vcells 64801484 494.4  374688371 2858.7 914766533 6979.2</code></pre>
+## Ncells  2265775 121.1   17827104  952.1  39469305 2107.9
+## Vcells 64801521 494.4  374688416 2858.7 914766644 6979.2</code></pre>
 </div>
 <div id="lpm-model-with-standard-errors-clustered-by-zip-code-and-time" class="section level3">
 <h3>LPM Model with standard errors clustered by zip code and time</h3>
@@ -564,8 +564,8 @@ ggplot(plot_data,aes(x=x,y=y))+geom_point()+
 <pre class="r"><code>cox &lt;- NULL
 gc()</code></pre>
 <pre><code>##            used (Mb) gc trigger   (Mb)  max used   (Mb)
-## Ncells  2283884  122   14261683  761.7  39469303 2107.9
-## Vcells 58322658  445  299750696 2287.0 914766533 6979.2</code></pre>
+## Ncells  2283886  122   14261683  761.7  39469305 2107.9
+## Vcells 58322695  445  299750732 2287.0 914766644 6979.2</code></pre>
 </div>
 <div id="two-stage-least-squres" class="section level3">
 <h3>Two Stage Least Squres</h3>
@@ -575,55 +575,58 @@ temp &lt;- temp[!duplicated(temp[,c(&quot;loanid&quot;,&quot;ne_cutoff&quot;)]),
 temp['org_qt']&lt;-as.yearqtr(as.Date(as.character(temp$orgdate)))
 temp = temp[temp$loanterm==360,]
 temp['current_hv_cat'] &lt;- temp$current_housevalue %/% 25000
+temp['zip_year'] &lt;- paste(temp$zip,temp$ne_year,sep=&quot;_&quot;)
+
+#temp2 &lt;- ddply(temp,.(zip_year),summarise,obs = length(loanid))
+
+#temp &lt;- temp[temp$zip_year %in% temp2[temp2$obs&lt;25,]$zip_year,]
 
 iv_reg &lt;- list()
-iv_reg[[1]] &lt;- lm(def ~ adjusted_mpay_rent + fico + ltv+ dti + log(upb) + current_hv_cat+interest_diff +factor(zip) + factor(ne_year), data=temp)
-iv_reg[[2]] &lt;- ivreg(def ~ adjusted_mpay_rent +current_hv_cat+factor(zip) + factor(ne_year) | interestrate_avg+org_hpi +current_hv_cat+factor(zip) + factor(ne_year), data=temp)
-iv_reg[[3]] &lt;- ivreg(def ~ adjusted_mpay_rent + fico + ltv+ dti + log(upb) + current_hv_cat+interest_diff +factor(zip) + factor(ne_year)| fico + ltv+ dti + log(upb) +current_hv_cat+ interestrate_avg+ interest_diff + org_hpi +factor(occupancy) + factor(purpose)+factor(zip) + factor(ne_year), data=temp)
-iv_reg[[4]] &lt;- lm(adjusted_mpay_rent~interestrate_avg+org_hpi+fico + current_hv_cat+ltv+ dti + log(upb) + interest_diff + factor(zip) + factor(ne_year), data=temp)
+iv_reg[[1]] &lt;- lm(def ~ adjusted_mpay_rent + fico + ltv+ dti + log(upb) + current_hv_cat+interest_diff *factor(zip_year), data=temp)
+iv_reg[[2]] &lt;- ivreg(def ~ adjusted_mpay_rent +current_hv_cat+factor(zip_year) | interestrate_avg+org_hpi +current_hv_cat+factor(zip_year), data=temp)
+iv_reg[[3]] &lt;- ivreg(def ~ adjusted_mpay_rent + fico + ltv+ dti + log(upb) + current_hv_cat+interest_diff +factor(zip_year) | fico + ltv+ dti + log(upb) +current_hv_cat+ interestrate_avg+ interest_diff + org_hpi +factor(occupancy) + factor(purpose)+factor(zip_year), data=temp)
+iv_reg[[4]] &lt;- lm(adjusted_mpay_rent~interestrate_avg+org_hpi+fico + current_hv_cat+ltv+ dti + log(upb) + interest_diff + factor(zip_year) , data=temp)
 
-stargazer(iv_reg,type = output.type,no.space = TRUE,omit = c(&quot;zip&quot;,&quot;ne_year&quot;,&quot;occupancy&quot;,&quot;purpose&quot;),omit.labels = c(&quot;zip&quot;,&quot;ne year&quot;,&quot;occupancy&quot;,&quot;purpose&quot;),column.labels   = c(&quot;OLS&quot;,&quot;Two Stage&quot;, &quot;First Stage&quot;),
-          column.separate = c(1,2, 1),omit.stat = c(&quot;f&quot;,&quot;ser&quot;,&quot;rsq&quot;))</code></pre>
+stargazer(iv_reg,type = output.type,no.space = TRUE,omit = c(&quot;zip_year&quot;,&quot;purpose&quot;,&quot;occupancy&quot;),omit.labels = c(&quot;zip * year&quot;,&quot;purpose&quot;,&quot;occupancy&quot;),column.labels   = c(&quot;OLS&quot;,&quot;Two Stage&quot;, &quot;First Stage&quot;),   column.separate = c(1,2, 1),omit.stat = c(&quot;f&quot;,&quot;ser&quot;,&quot;rsq&quot;))</code></pre>
 <pre><code>## 
-## =====================================================================
-##                                   Dependent variable:                
-##                    --------------------------------------------------
-##                                  def               adjusted_mpay_rent
-##                       OLS         instrumental            OLS        
-##                                     variable                         
-##                       OLS          Two Stage          First Stage    
-##                       (1)        (2)       (3)            (4)        
-## ---------------------------------------------------------------------
-## adjusted_mpay_rent  0.095***  0.417***   0.511***                    
-##                     (0.007)    (0.021)   (0.022)                     
-## interestrate_avg                                        0.091***     
-##                                                         (0.002)      
-## org_hpi                                                 0.002***     
-##                                                         (0.0001)     
-## fico               -0.0005***           -0.0004***     -0.0001***    
-##                    (0.00002)            (0.00002)      (0.00001)     
-## ltv                  0.0001              0.001***       0.005***     
-##                     (0.0001)             (0.0001)       (0.0002)     
-## dti                0.0004***            0.0004***      -0.0001***    
-##                     (0.0001)             (0.0001)      (0.00005)     
-## log(upb)            0.031***              -0.009        0.054***     
-##                     (0.007)              (0.008)        (0.004)      
-## current_hv_cat     -0.004***  0.001***    0.002*       -0.007***     
-##                     (0.001)   (0.0004)   (0.001)        (0.001)      
-## interest_diff       0.043***            -0.144***       0.530***     
-##                     (0.016)              (0.019)        (0.009)      
-## Constant             -0.124   -0.391*** -0.233***      -1.239***     
-##                     (0.086)    (0.034)   (0.089)        (0.054)      
-## ---------------------------------------------------------------------
-## zip                   Yes        Yes       Yes            Yes        
-## ne year               Yes        Yes       Yes            Yes        
-## occupancy              No        No         No             No        
-## purpose                No        No         No             No        
-## ---------------------------------------------------------------------
-## Observations         58,735    60,090     58,735         58,735      
-## Adjusted R2          0.058      0.015     -0.002         0.720       
-## =====================================================================
-## Note:                                     *p&lt;0.1; **p&lt;0.05; ***p&lt;0.01</code></pre>
+## ====================================================================
+##                                   Dependent variable:               
+##                    -------------------------------------------------
+##                                 def               adjusted_mpay_rent
+##                       OLS        instrumental            OLS        
+##                                    variable                         
+##                       OLS          Two Stage         First Stage    
+##                       (1)       (2)       (3)            (4)        
+## --------------------------------------------------------------------
+## adjusted_mpay_rent  0.090***  0.361***  0.477***                    
+##                     (0.010)   (0.020)   (0.021)                     
+## interestrate_avg                                       0.094***     
+##                                                        (0.001)      
+## org_hpi                                                0.002***     
+##                                                       (0.00004)     
+## fico               -0.0004***          -0.0003***    -0.00002***    
+##                    (0.00002)           (0.00002)      (0.00001)     
+## ltv                  0.0001             0.001***       0.005***     
+##                     (0.0001)            (0.0001)       (0.0001)     
+## dti                0.0004***           0.0004***      -0.0001**     
+##                     (0.0001)            (0.0001)      (0.00003)     
+## log(upb)            0.041***             0.003         0.049***     
+##                     (0.007)             (0.007)        (0.003)      
+## current_hv_cat     -0.006***  0.001**    0.0004       -0.006***     
+##                     (0.001)   (0.0004)  (0.001)        (0.0004)     
+## interest_diff        0.173             -0.142***       0.521***     
+##                     (1.705)             (0.018)        (0.006)      
+## Constant            -0.243*    -0.160    -0.136       -1.831***     
+##                     (0.131)   (0.099)   (0.126)        (0.049)      
+## --------------------------------------------------------------------
+## zip * year            Yes       Yes       Yes            Yes        
+## purpose                No        No        No             No        
+## occupancy              No        No        No             No        
+## --------------------------------------------------------------------
+## Observations         58,735    60,090    58,735         58,735      
+## Adjusted R2          0.177     0.155     0.149          0.896       
+## ====================================================================
+## Note:                                    *p&lt;0.1; **p&lt;0.05; ***p&lt;0.01</code></pre>
 </div>
 <div id="zipcode-level-regression-default-median-mpay_rent" class="section level3">
 <h3>Zipcode level regression: default % ~ median mpay_rent</h3>
