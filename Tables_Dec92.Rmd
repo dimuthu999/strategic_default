@@ -393,7 +393,6 @@ ne = 0.2
 p1_1
 ```
 
-
 ### Descriptive Statistics: Negative Equity Loans
 ```{r desc}
 
@@ -433,7 +432,6 @@ cor_table <-cor(zillow_cox[zillow_cox$ne_cutoff==-0.01,c("adjusted_mpay_rent","f
 
 stargazer(cor_table,type=output.type,summary = FALSE)
 ```
-
 
 ### mpay/rent histogram
 ```{r }
@@ -639,7 +637,6 @@ ggplot(plot_data,aes(x=x,y=y))+geom_point()+
 
 ```
 
-
 ### Hazard Contribution
 ```{r hazardgraph}
 
@@ -674,15 +671,12 @@ cox <- NULL
 gc( verbose = FALSE)
 ```
 
-
 ### Two Stage Least Squres
 Using the <b>10% negative equity subsample</b>. Similar results for other negative equity subsamples and for the combined sample.
 
-Diagnostic tests:
-      test      |  df1   df2 statistic  p-value    
----------------------------------------------------
-Weak instruments|  6   58320   2664.73  < 2e-16 ***
-Wu-Hausman      |  1   58324     43.26 4.84e-11 ***
+<b>Diagnostic tests:</b><br/>
+Weak instruments : statistic 2664.73; p-value  < 2e-16 ***<br/>
+Wu-Hausman : statistic 43.26; p-value 4.84e-11 ***
 ```{r tsls}
 temp <- zillow_cox[zillow_cox$ne_cutoff==-0.1,]
 temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff")]),]
@@ -705,41 +699,71 @@ stargazer(iv_reg,type = output.type,no.space = TRUE,omit = c("zip_year","purpose
 ```
 
 ### Two Stage Least Squres (m/r + m/r*(m/r >1) )
-Diagnostic tests:
-                  Test                                              | df1  df2   statistic p-value ----------------------------------------------------------------------------------------------------
-Weak instruments (adjusted mpay rent)                               |   6 58320  2664.729  <2e-16 ***
-Weak instruments (I(adjusted mpay rent > 1)TRUE)                    |   6 58320  1249.276  <2e-16 ***
-Weak instruments (adjusted mpay rent:I(adjusted mpay rent > 1)TRUE) |   6 58320  1887.863  <2e-16 ***
-Wu-Hausman                                                          |   3 58320    26.490  <2e-16 ***
-```{r tslsinteraction,echo=FALSE}
-temp <- zillow_cox[zillow_cox$ne_cutoff==-0.1,]
-temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff")]),]
-temp['org_qt']<-as.yearqtr(as.Date(as.character(temp$orgdate)))
-temp = temp[temp$loanterm==360,]
-temp$def <- ifelse(temp$adjusted_mpay_rent >= 0.8 & temp$adjusted_mpay_rent < 1,0,temp$def)
-temp['current_hv_cat'] <- temp$current_housevalue %/% 25000
-temp['zip_year'] <- paste(temp$zip,temp$ne_year,sep="_")
+
+<b>Diagnostic tests:</b><br/>
+Weak instruments (adjusted mpay rent) :   statistic  2664.729 ; p-value <2e-16 ***<br/>
+Weak instruments (I(adjusted mpay rent > 1)TRUE) :   statistic 1249.276 ; p-value  <2e-16 ***<br/>
+Weak instruments (adjusted mpay rent:I(adjusted mpay rent > 1)TRUE) :   statistic 1887.863; p-value   <2e-16 ***<br/>
+Wu-Hausman  :  statistic   26.490; p-value   <2e-16 ***<br/>
+
+```{r tslsinteraction}
+setwd(file_path)
+temp <- readRDS(file="ne_-10_cleaned.rds")
 
 temp <- temp[!is.na(temp$adjusted_mpay_rent) & !is.na(temp$interestrate_avg) & !is.na(temp$age_t) & !is.na(temp$fico) & !is.na(temp$current_hv_cat) & !is.na(temp$ltv)  & !is.na(temp$dti)  & !is.na(temp$upb)  & !is.na(temp$interest_diff)  & !is.na(temp$zip_year),]
-#temp2 <- ddply(temp,.(zip_year),summarise,obs = length(loanid))
-
-#temp <- temp[temp$zip_year %in% temp2[temp2$obs<25,]$zip_year,]
 
 iv_reg <- list()
-se <- list()
-iv_reg[[1]] <- lm(def ~ adjusted_mpay_rent + fico + ltv+ dti + log(upb) + current_hv_cat+interest_diff *factor(zip_year), data=temp)
-se[[1]] <- NULL
-iv_reg[[2]] <- lm(adjusted_mpay_rent~interestrate_avg+age_t+fico + current_hv_cat+ltv+ dti + log(upb) + interest_diff + factor(zip_year) , data=temp)
-se[[2]] <- NULL
-temp['mpay_rent_hat'] <- predict(iv_reg[[2]],temp)
-iv_reg[[3]] <- lm(def ~ mpay_rent_hat*I(mpay_rent_hat>1) + fico + ltv+ dti + log(upb) + current_hv_cat+interest_diff +factor(zip_year),data=temp)
-se[[3]] <- NULL #sqrt(diag(vcovHAC.default(iv_reg[[3]],sandwich = TRUE)))
-iv_reg[[4]] <- ivreg(def ~ adjusted_mpay_rent*I(adjusted_mpay_rent>1) + fico + ltv+ dti + log(upb) + current_hv_cat+interest_diff +factor(zip_year) | fico + ltv+ dti + log(upb) +current_hv_cat+ interestrate_avg+ interest_diff + age_t +factor(occupancy) + factor(purpose)+factor(zip_year), data=temp)
-se[[4]] <- NULL
-stargazer(iv_reg,type = output.type,no.space = TRUE,omit = c("zip_year","purpose","occupancy"),omit.labels = c("zip * year","purpose","occupancy"),column.labels   = c("OLS","First Stage", "Second Stage"),   column.separate = c(1,1,2),omit.stat = c("f","ser","rsq"))
+iv_reg[[1]] <- lm(adjusted_mpay_rent~interestrate_avg+age_t+fico + current_hv_cat+ltv+ dti + log(upb) + interest_diff + factor(zip_year) , data=temp)
+temp['mpay_rent_hat'] <- predict(iv_reg[[1]],temp)
+iv_reg[[2]] <- lm(def ~ mpay_rent_hat*I(mpay_rent_hat>1) + fico + ltv+ dti + log(upb) + current_hv_cat+interest_diff +factor(zip_year),data=temp)
+
+stargazer(iv_reg,type = output.type,no.space = TRUE,omit = c("zip_year"),omit.labels = c("zip * year"),column.labels   = c("OLS","First Stage", "Second Stage"),   column.separate = c(1,1,2),omit.stat = c("f","ser","rsq"))
 ```
 
+### Two Stage Least Squres (m/r + m/r*(m/r >1) ) Prediction
+```{r tslsinteractionpred, echo=FALSE}
+lpm_sum <- summary(iv_reg[[2]])
+lpm_coef <- as.data.frame(lpm_sum$coefficients)
+lpm_coef['x']<- row.names(lpm_coef)
+lpm_coef$`Std. Error` <-NULL
+lpm_coef$`t value` <- NULL
 
+factor_zip_year <- median(lpm_coef[substr(lpm_coef$x,1,16)=="factor(zip_year)",]$Estimate,na.rm = TRUE)
+lpm_coef <- lpm_coef[substr(lpm_coef$x,1,16)!="factor(zip_year)",]
+
+lpm_coef['value'] <- NA
+lpm_coef[lpm_coef$x=="(Intercept)",'value']=1
+lpm_coef[lpm_coef$x=="fico",'value'] = mean(temp$fico,na.rm = TRUE)
+lpm_coef[lpm_coef$x=="ltv",'value'] = mean(temp$ltv,na.rm = TRUE)
+lpm_coef[lpm_coef$x=="dti",'value'] = mean(temp$dti,na.rm = TRUE)
+lpm_coef[lpm_coef$x=="log(upb)",'value'] = log(mean(temp$upb,na.rm = TRUE))
+lpm_coef[lpm_coef$x=="current_hv_cat",'value'] = mean(temp$current_hv_cat,na.rm = TRUE)
+lpm_coef[lpm_coef$x=="interest_diff",'value'] = 0
+
+lpm_coef[lpm_coef$x=="mpay_rent_hat",'value'] = 0.5
+lpm_coef[lpm_coef$x=="I(mpay_rent_hat > 1)TRUE",'value'] = 0
+lpm_coef[lpm_coef$x=="mpay_rent_hat:I(mpay_rent_hat > 1)TRUE",'value'] = lpm_coef[lpm_coef$x=="mpay_rent_hat",'value']*lpm_coef[lpm_coef$x=="I(mpay_rent_hat > 1)TRUE",'value']
+
+x = seq(0.6,2,0.025)
+y = rep(NA, length(x))
+
+for(i in 1:length(x))  {
+  lpm_coef[lpm_coef$x=="mpay_rent_hat",'value'] = x[i]
+  if(x[i]>1) ind =1
+  else ind = 0 
+  lpm_coef[lpm_coef$x=="I(mpay_rent_hat > 1)TRUE",'value'] = ind
+  lpm_coef[lpm_coef$x=="mpay_rent_hat:I(mpay_rent_hat > 1)TRUE",'value'] = ind*x[i]
+  lpm_coef['pred'] <- lpm_coef$Estimate*lpm_coef$value
+  y[i]= sum(lpm_coef$pred)+factor_zip_year
+}
+
+plot_data <- as.data.frame(cbind(x,y))
+
+ggplot(plot_data,aes(x=x,y=y))+geom_point()+
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())+labs(x = "mpay/rent",y="Predicted probability of default")+ theme_bw()
+
+```
 
 ### Two Stage Least Squres - mpay/rent <1
 
@@ -840,7 +864,6 @@ iv_reg[[4]] <- lm(adjusted_mpay_rent~interestrate_avg+age_t+fico + current_hv_ca
 stargazer(iv_reg,type = output.type,no.space = TRUE,omit = c("zip_year","purpose","occupancy"),omit.labels = c("zip * year","purpose","occupancy"),column.labels   = c("OLS","Two Stage", "First Stage"),   column.separate = c(1,2, 1),omit.stat = c("f","ser","rsq"))
 ```
 
-
 ### Two Stage Least Squres - <b>Matched</b> 10% positive equity & mpay/rent > 1
 
 ```{r tslsposeqtygt1, echo=FALSE}
@@ -893,12 +916,13 @@ iv_reg[[4]] <- lm(adjusted_mpay_rent~interestrate_avg+age_t+fico + current_hv_ca
 stargazer(iv_reg,type = output.type,no.space = TRUE,omit = c("zip_year","purpose","occupancy"),omit.labels = c("zip * year","purpose","occupancy"),column.labels   = c("OLS","Two Stage", "First Stage"),   column.separate = c(1,2, 1),omit.stat = c("f","ser","rsq"))
 ```
 
+### low mpay_rent (<0.8) negative (20%) and positive(20%) equity default (Matched)
 
-
-### low mpay_rent (<0.8) negative (10%) and positive(10%) equity default (Matched)
-```{r posnegcom}
+Matching Variables: fico+log(upb)+interestrate<br/>
+Exactly match by: zip,ne_qt, current house value category
+```{r posnegcom,echo=FALSE}
 setwd(file_path)
-pos_eqty <- readRDS("cox_ne_0.1_Dec082016.rds")
+pos_eqty <- readRDS("cox_ne_0.2_Dec082016.rds")
 pos_eqty <- pos_eqty[!duplicated(pos_eqty[,c("loanid","ne_cutoff")]),]
 pos_eqty <- pos_eqty[!is.na(pos_eqty$adjusted_mpay_rent),]
 pos_eqty <- pos_eqty[pos_eqty$adjusted_mpay_rent<0.8,]
@@ -906,24 +930,25 @@ pos_eqty['org_qt']<-as.yearqtr(as.Date(as.character(pos_eqty$orgdate)))
 interestrate_zip <- readRDS("interestrate_zip.rds")
 pos_eqty <- merge(pos_eqty,interestrate_zip,by=c("zip","org_qt"),all.x = TRUE)
 pos_eqty['interest_diff'] <- (pos_eqty$interestrate - pos_eqty$interestrate_avg)/pos_eqty$interestrate_avg
-temp  <- zillow_cox[zillow_cox$ne_cutoff==-0.1,]
+temp  <- zillow_cox[zillow_cox$ne_cutoff==-0.2,]
 temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff")]),]
 temp <- temp[!is.na(temp$adjusted_mpay_rent),]
 temp <- temp[temp$adjusted_mpay_rent<0.8,]
 temp <- temp[,names(pos_eqty)]
 pos_eqty <- rbind(pos_eqty,temp)
-
-pos_eqty['Tr'] <- ifelse(pos_eqty$ne_cutoff==-0.1,1,0)
+pos_eqty['current_hv_cat'] <- pos_eqty$current_housevalue %/% 25000
+pos_eqty['Tr'] <- ifelse(pos_eqty$ne_cutoff==-0.2,1,0)
 
 pos_eqty <- pos_eqty[!is.na(pos_eqty$fico) & !is.na(pos_eqty$upb) & !is.na(pos_eqty$interestrate) &  !is.na(pos_eqty$zip) & !is.na(pos_eqty$ne_qt),]
 
 Tr <- pos_eqty$Tr
 Y <- pos_eqty$def
 
-glm_prop <- glm(Tr~fico+log(upb)+interestrate,data=pos_eqty,family = 'binomial')
-propensity <- Matchby(Y=Y,Tr=Tr,by=list(pos_eqty$zip),X=glm_prop$fitted.values,M=1,replace = FALSE,print.level = 0)
+glm_prop <- glm(Tr~fico+log(upb)+interestrate+current_hv_cat,data=pos_eqty,family = 'binomial')
+propensity <- Matchby(Y=Y,Tr=Tr,by=list(pos_eqty$zip,pos_eqty$ne_qt,pos_eqty$current_hv_cat),X=glm_prop$fitted.values,print.level = 0,replace = TRUE,M=1)
+#propensity <- Match(Y=Y,Tr=Tr,X=glm_prop$fitted.values,ties = FALSE)
 
-MatchBalance(Tr~def+fico+interestrate+upb,match.out = propensity,nboots = 0,data=pos_eqty,paired = TRUE)
+MatchBalance(Tr~def,match.out = propensity,nboots = 0,data=pos_eqty,paired = TRUE)
 ```
 
 ### Zipcode level regression: default % ~ median mpay_rent
@@ -1074,4 +1099,3 @@ stargazer(ols, omit = c("state","current_year"),omit.labels = c("State","Year"),
 # Note:               *p<0.1; **p<0.05; ***p<0.01
 
 ```
-
