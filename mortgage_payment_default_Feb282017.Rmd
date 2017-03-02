@@ -1,0 +1,148 @@
+---
+title: "Mortgage Payment and Default"
+output: 
+  html_document: 
+    css: bodycss.css
+    fig_height: 6
+    fig_width: 12
+    toc: yes
+---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+```{r echo=FALSE}
+rm(list=ls())
+library(data.table)
+library(zoo)
+library(sqldf)
+library(stargazer)
+library(survival)
+library(reshape2)
+library(zipcode)
+library(ggplot2)
+library(multiwayvcov)
+library(sandwich)
+library(Matching)
+library(AER)
+library(FinCal)
+library(ggplot2)
+library(reshape2)
+library(scales)
+library(pracma)
+library(plyr)
+file_path = "C:/Users/dnratnadiwakara/Documents/strategic_default"
+setwd(file_path)
+# source("functions.R")
+output.type = "text"
+
+completeFun <- function(data, desiredCols) {
+  completeVec <- complete.cases(data[, desiredCols])
+  return(data[completeVec, ])
+}
+
+mtgrates <- read.csv(file="MORTGAGE30US.csv")
+mtgrates$date <- as.Date(mtgrates$date,origin="1900-01-01")
+mtgrates['org_qt'] <- as.yearqtr(mtgrates$date)
+mtgrates <- ddply(mtgrates,.(org_qt),summarise,mtg30us=median(mtg30us,na.rm = TRUE))
+property_tax <- readRDS("prop_tax.rds")
+zillow_cox <- readRDS(file="zillow_cox_dec23.rds")
+zillow_cox['mpay_value'] <- zillow_cox$adjusted_mpay_rent*zillow_cox$adjusted_rent/zillow_cox$current_housevalue
+zillow_cox <- merge(zillow_cox,mtgrates,by=c("org_qt"))
+
+        temp <- readRDS("cox_ne_-0.1_Feb282017_allzips.rds")
+        temp['temp']<- (temp$current_housevalue-temp$currentupb_t)/temp$current_housevalue
+        temp['temp']<- temp$temp - temp$current_equity
+        temp = temp[abs(temp$temp)<0.001,]
+        temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff","ne_qt")]),]
+        zillow_cox_allzip = temp
+
+        temp <- readRDS("cox_ne_-0.3_Feb282017_allzips.rds")
+        temp['temp']<- (temp$current_housevalue-temp$currentupb_t)/temp$current_housevalue
+        temp['temp']<- temp$temp - temp$current_equity
+        temp = temp[abs(temp$temp)<0.001,]
+        temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff","ne_qt")]),]
+        zillow_cox_allzip = rbind(zillow_cox_allzip,temp)
+        
+        temp <- readRDS("cox_ne_-0.5_Feb282017_allzips.rds")
+        temp['temp']<- (temp$current_housevalue-temp$currentupb_t)/temp$current_housevalue
+        temp['temp']<- temp$temp - temp$current_equity
+        temp = temp[abs(temp$temp)<0.001,]
+        temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff","ne_qt")]),]
+        zillow_cox_allzip = rbind(zillow_cox_allzip,temp)
+        
+        temp <- readRDS("cox_ne_-0.7_Feb282017_allzips.rds")
+        temp['temp']<- (temp$current_housevalue-temp$currentupb_t)/temp$current_housevalue
+        temp['temp']<- temp$temp - temp$current_equity
+        temp = temp[abs(temp$temp)<0.001,]
+        temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff","ne_qt")]),]
+        zillow_cox_allzip = rbind(zillow_cox_allzip,temp)
+        
+        zillow_cox_allzip['mpay_value'] <- zillow_cox_allzip$mpay/zillow_cox_allzip$current_housevalue
+        zillow_cox_allzip$orgdate <- as.Date(as.character(zillow_cox_allzip$orgdate))
+        zillow_cox_allzip['org_qt'] <- as.yearqtr(zillow_cox_allzip$orgdate)
+        zillow_cox_allzip <- merge(zillow_cox_allzip,mtgrates,by=c("org_qt"))
+        zillow_cox_allzip['org_year'] <- as.numeric(format(zillow_cox_allzip$orgdate,"%Y"))
+        zillow_cox_allzip['ne_year'] <- as.numeric(format(as.Date(as.character(zillow_cox_allzip$reportingperiod_t)),"%Y"))
+        zillow_cox_allzip['interest_diff'] <- zillow_cox_allzip$mtg30us - zillow_cox_allzip$interestrate
+```
+
+### Two Stage Least Squres: Mortgage-to-value (All Zip Codes)
+
+```{r tsls}
+temp <- zillow_cox_allzip[zillow_cox_allzip$ne_cutoff %in% c(-0.1,-0.3,-0.5,-0.7),]
+temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff")]),]
+temp['org_qt']<-as.yearqtr(as.Date(as.character(temp$orgdate)))
+temp = temp[temp$loanterm==360,]
+temp['current_hv_cat'] <- temp$current_housevalue %/% 25000
+temp['zip_year'] <- paste(temp$zip,temp$ne_year,sep="_")
+temp['zip_orgyear'] <- paste(temp$zip,temp$org_year,sep="_")
+
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","current_hv_cat","zip_year","zip_orgyear","mtg30us","age_t"))
+
+iv_reg <- list()
+# iv_reg[[1]] <- lm(def ~ mpay_value + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.1,])
+pred <- lm(mpay_value~mtg30us+fico + current_hv_cat+ltv+ dti + upb + interest_diff +factor(zip_orgyear) +factor(occupancy) + factor(purpose), data=temp)
+temp['mpay_value']<-predict(pred)
+pred <- NULL
+iv_reg[[1]] <- lm(def ~ mpay_value + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.1,])
+iv_reg[[2]] <- lm(def ~ mpay_value + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.3,])
+iv_reg[[3]] <- lm(def ~ mpay_value + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.5,])
+iv_reg[[4]] <- lm(def ~ mpay_value + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.7,])
+# iv_reg[[3]] <- lm(def ~ mpay_value_pr + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.3,])
+# iv_reg[[4]] <- lm(def ~ mpay_value_pr + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.5,])
+# iv_reg[[4]] <- ivreg(def ~ mpay_value + fico + ltv+ dti + log(upb) + current_hv_cat+interest_diff *factor(zip_year)+factor(zip_orgyear)|interestrate_avg+age_t+fico + current_hv_cat+ltv+ dti + log(upb) + interest_diff + factor(zip_year) +factor(zip_orgyear), data=temp)
+
+stargazer(iv_reg,type = output.type,no.space = TRUE,omit = c("zip_year","purpose","occupancy","zip_orgyear"),omit.labels = c("zip * year","purpose","occupancy","zip * orgyear"),column.labels   = c("IV 10% NE","IV 30% NE","IV 50% NE","IV 70% NE"),   column.separate = c(1,1,1,1),omit.stat = c("f","ser","rsq"))
+
+```
+
+### Two Stage Least Squres: Mortgage-to-value + rent
+
+```{r tslsrent}
+temp <- zillow_cox[zillow_cox$ne_cutoff %in% c(-0.2,-0.3,-0.5),]
+temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff")]),]
+temp['org_qt']<-as.yearqtr(as.Date(as.character(temp$orgdate)))
+temp = temp[temp$loanterm==360,]
+temp['current_hv_cat'] <- temp$current_housevalue %/% 25000
+temp['zip_year'] <- paste(temp$zip,temp$ne_year,sep="_")
+temp['zip_orgyear'] <- paste(temp$zip,temp$org_year,sep="_")
+
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","current_hv_cat","interest_diff","zip_year","zip_orgyear","interestrate_avg","age_t"))
+#temp2 <- ddply(temp,.(zip_year),summarise,obs = length(loanid))
+
+#temp <- temp[temp$zip_year %in% temp2[temp2$obs<25,]$zip_year,]
+
+iv_reg <- list()
+iv_reg[[1]] <- lm(def ~ mpay_value++log(rent) + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.2,])
+iv_reg[[7]] <- lm(mpay_value~mtg30us+fico + current_hv_cat+ltv+ dti + upb + interest_diff + factor(zip_year)+factor(zip_orgyear) +factor(occupancy) + factor(purpose), data=temp)
+temp['mpay_value']<-predict(iv_reg[[7]])
+iv_reg[[2]] <- lm(def ~ mpay_value+log(rent)  + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.2,])
+iv_reg[[3]] <- lm(def ~ mpay_value+log(rent)  + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.3,])
+iv_reg[[4]] <- lm(def ~ mpay_value+log(rent)  + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.5,])
+iv_reg[[5]] <- lm(def ~ mpay_value + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.2 & temp$adjusted_mpay_rent<=1,])
+iv_reg[[6]] <- lm(def ~ mpay_value  + fico + ltv+ dti + upb + current_hv_cat+interest_diff +factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose), data=temp[temp$ne_cutoff==-0.2 & temp$adjusted_mpay_rent > 1,])
+# iv_reg[[4]] <- ivreg(def ~ mpay_value + fico + ltv+ dti + log(upb) + current_hv_cat+interest_diff *factor(zip_year)+factor(zip_orgyear)|interestrate_avg+age_t+fico + current_hv_cat+ltv+ dti + log(upb) + interest_diff + factor(zip_year) +factor(zip_orgyear), data=temp)
+
+stargazer(iv_reg,type = output.type,no.space = TRUE,omit = c("zip_year","purpose","occupancy","zip_orgyear"),omit.labels = c("zip * year","purpose","occupancy","zip * orgyear"),column.labels   = c("OLS 20% NE","IV 20% NE","IV 30% NE","IV 50% NE", "IV 20% mr lt 1", "IV 20% mr gt 1", "First Stage"),   column.separate = c(1,1, 1),omit.stat = c("f","ser","rsq"))
+```
