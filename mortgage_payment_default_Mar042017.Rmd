@@ -1,0 +1,303 @@
+---
+title: "Mortgage Payment and Default"
+output: 
+  html_document: 
+    css: bodycss.css
+    fig_height: 6
+    fig_width: 12
+    toc: yes
+    number_section: yes
+---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE,echo=FALSE)
+```
+
+```{r echo=FALSE}
+rm(list=ls())
+library(data.table)
+library(zoo)
+library(sqldf)
+library(stargazer)
+library(survival)
+library(reshape2)
+library(zipcode)
+library(ggplot2)
+library(multiwayvcov)
+library(sandwich)
+library(Matching)
+library(AER)
+library(FinCal)
+library(ggplot2)
+library(reshape2)
+library(scales)
+library(pracma)
+library(plyr)
+file_path = "C:/Users/dnratnadiwakara/Documents/strategic_default"
+setwd(file_path)
+# source("functions.R")
+output.type = "text"
+
+completeFun <- function(data, desiredCols) {
+  completeVec <- complete.cases(data[, desiredCols])
+  return(data[completeVec, ])
+}
+
+mtgrates <- read.csv(file="MORTGAGE30US.csv")
+mtgrates$date <- as.Date(mtgrates$date,origin="1900-01-01")
+mtgrates['org_qt'] <- as.yearqtr(mtgrates$date)
+mtgrates <- ddply(mtgrates,.(org_qt),summarise,mtg30us=median(mtg30us,na.rm = TRUE))
+property_tax <- readRDS("prop_tax.rds")
+
+###########################################################
+# loan_data
+# file_names <- c("cox_ne_-0.1_Dec232016_60day.rds","cox_ne_-0.3_Dec232016_60day.rds","cox_ne_-0.5_Dec232016_60day.rds","cox_ne_0.1_Dec232016_60day.rds","cox_ne_0.4_Dec232016_60day.rds","cox_ne_0.5_Dec232016_60day.rds")
+# 
+# loan_data <- NULL
+# 
+# for(fn in file_names){
+#   temp <- readRDS(file=fn)
+#   temp['temp']<- (temp$current_housevalue-temp$currentupb_t)/temp$current_housevalue
+#   temp['temp']<- temp$temp - temp$current_equity
+#   temp = temp[abs(temp$temp)<0.001,]
+#   temp <- temp[!is.na(temp$adjusted_mpay_rent),]
+#   temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff")]),]
+# 
+#   temp['org_qt'] <- as.yearqtr(as.Date(as.character(temp$orgdate)))
+#   temp <- merge(temp,mtgrates,by=c("org_qt"))
+#   temp['mpay_value'] <- temp$mpay/temp$current_housevalue
+#   temp['interest_diff'] <- temp$interestrate - temp$mtg30us
+#   temp['ne_year'] <- as.numeric(format(as.Date(as.character(temp$reportingperiod_t)),"%Y"))
+#   temp['zip_year'] <- paste(temp$zip,temp$ne_year,sep="_")
+#   temp['org_year'] <- as.numeric(format(as.Date(as.character(temp$orgdate)),"%Y"))
+#   temp['zip_orgyear'] <- paste(temp$zip,temp$org_year,sep="_")
+# 
+#   if(median(temp$ne_cutoff,na.rm=TRUE)>0) temp <- temp[temp$org_year<=2008 & temp$org_year>=2004 & temp$ne_year<=2012,]
+# 
+#   temp <- temp[!duplicated(temp[,c("loanid","ne_cutoff")]),]
+#   temp <- temp[temp$loanterm==360,]
+# 
+#   zip_rent <- ddply(temp,.(zip,ne_qt),summarize,rent=median(rent,na.rm = TRUE),value=median(current_housevalue,na.rm = TRUE))
+#   zip_rent['rent_value'] <- zip_rent$rent/zip_rent$value
+# 
+#   zip_rent_2 <- ddply(zip_rent,.(ne_qt),summarize,median_rent_value=median(rent_value,na.rm = TRUE))
+#   # zip_rent_2['median_rent_value'] <- zip_rent_2$rent/zip_rent_2$value
+#   zip_rent_2 <- zip_rent_2[,c("ne_qt","median_rent_value")]
+#   zip_rent <- merge(zip_rent,zip_rent_2,by=c("ne_qt"))
+#   zip_rent['high_rent_value'] <- ifelse(zip_rent$rent_value>zip_rent$median_rent_value,1,0)
+#   zip_rent <- zip_rent[,c("zip","ne_qt","high_rent_value","rent_value")]
+#   temp  <- merge(temp,zip_rent,by=c("zip","ne_qt"))
+#   loan_data = rbind(loan_data,temp)
+# }
+
+# saveRDS(loan_data,file="loan_data_Mar42017.rds")
+###########################################################
+
+loan_data <- readRDS(file="loan_data_Mar42017.rds")
+        
+omit = c("purpose","occupancy","zip_year","zip_orgyear")
+omit.labels = c("loan purpose","occupancy","zip * negative equity year","zip * origination year")
+omit.stat = c("f","ser","rsq")
+
+first_stage_formula <- "mpay_value~mtg30us+fico + log(current_housevalue)+ltv+ dti + log(upb) +  factor(zip_year)+factor(zip_orgyear) +factor(occupancy) + factor(purpose)"
+iv_formula <- as.formula("def ~ mpay_value+ fico + ltv+ dti + log(upb)  + log(current_housevalue)+factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose)")
+iv_formula_2 <- as.formula("def ~ mpay_value+ fico + ltv+ dti + log(upb)  + log(current_housevalue)++factor(zip_year)+factor(zip_orgyear)+factor(occupancy) + factor(purpose)")
+```
+
+# Descriptive Statistics
+## 10% Negative Equity Loans
+```{r ne20_desc}
+
+stargazer(loan_data[loan_data$ne_cutoff==-0.1, c("def","mpay_value","rent_value","fico","ltv","dti","upb","interestrate","org_year","ne_year")], type = output.type, summary.stat = c("mean", "sd", "p25", "median", "p75", "n"),notes = "")
+```
+
+## 10% Positive Eqity Loans
+```{r pe20_desc}
+
+stargazer(loan_data[loan_data$ne_cutoff==0.1, c("def","mpay_value","rent_value","fico","ltv","dti","upb","interestrate","org_year","ne_year")], type = output.type, summary.stat = c("mean", "sd", "p25", "median", "p75", "n"),notes = "")
+```
+
+
+# Negative Equity: Default ~ Mortgage-to-value + rent-to-value
+
+* Sample: Loan enters in to the sample after borrower reaching the particular negative equity threshold and the default indicates whether borrower defaulted in the following 12 months after reaching the negative equity threshold.
+* mtg30us: 30-Year Fixed Rate Mortgage Average in the United States in the loan origination month
+* interest_diff: interest rate - mtg30us
+* rent-to-value : median rent/median value for the zip code in the negative equity quarter
+
+## Negative Equity: First Stage
+```{r tslsrent_ne_1st}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.3,-0.5),]
+
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","current_housevalue","interest_diff","zip_year","zip_orgyear","mtg30us","age_t"))
+
+
+iv_reg_1st <- list()
+iv_reg_1st[[1]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==-0.1,])
+iv_reg_1st[[2]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==-0.3,])
+iv_reg_1st[[3]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==-0.5,])
+
+
+stargazer(iv_reg_1st,type = output.type,no.space = TRUE,omit =omit,omit.labels = omit.labels,column.labels   = c("10% NE","30% NE","50% NE"),omit.stat = omit.stat)
+```
+
+## Negative Equity: IV Regressions
+
+```{r tslsrent_ne_2nd_1}
+iv_reg <- list()
+iv_reg[[1]] <- lm(iv_formula, data=temp[temp$ne_cutoff==-0.1,])
+
+  temp2 <- temp[temp$ne_cutoff==-0.1,]
+  temp2['mpay_value'] <- predict(iv_reg_1st[[1]],temp2)
+iv_reg[[2]] <- lm(iv_formula, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==-0.3,]
+  temp2['mpay_value'] <- predict(iv_reg_1st[[2]],temp2)
+iv_reg[[3]] <- lm(iv_formula, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==-0.5,]
+  temp2['mpay_value'] <- predict(iv_reg_1st[[3]],temp2)
+iv_reg[[4]] <- lm(iv_formula, data=temp2)
+
+
+
+stargazer(iv_reg,type = output.type,no.space = TRUE,omit =omit,omit.labels = omit.labels,column.labels   = c("OLS 10% NE","IV 10% NE","IV 30% NE","IV 50% NE"), omit.stat = omit.stat)
+```
+
+## Negative Equity: IV Regressions (Split by rent-to-value)
+* Less than median: Loans from zip codes where median rent-to-value is less than the median(rent-to-value) in the same quarter
+* Greater than median: Loans from zip codes where median rent-to-value is greater than the median(rent-to-value) in the same quarter
+```{r tslsrent_ne_2nd_2}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.3,-0.5),]
+
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","current_housevalue","interest_diff","zip_year","zip_orgyear","mtg30us","age_t"))
+
+iv_reg_1st <- list()
+iv_reg_1st[[1]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==-0.1 & temp$high_rent_value==0,])
+iv_reg_1st[[2]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==-0.1 & temp$high_rent_value==1,])
+iv_reg_1st[[3]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==-0.3 & temp$high_rent_value==0,])
+iv_reg_1st[[4]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==-0.3 & temp$high_rent_value==1,])
+iv_reg_1st[[5]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==-0.5 & temp$high_rent_value==0,])
+iv_reg_1st[[6]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==-0.5 & temp$high_rent_value==1,])
+
+
+iv_reg <- list()
+  temp2 <- temp[temp$ne_cutoff==-0.1 & temp$high_rent_value==0,]
+  temp2['mpay_value'] <- predict(iv_reg_1st[[1]],temp2)
+iv_reg[[1]] <- lm(iv_formula_2, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==-0.1 & temp$high_rent_value==1,]
+  temp2['mpay_value'] <- predict(iv_reg_1st[[2]],temp2)
+iv_reg[[2]] <- lm(iv_formula_2, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==-0.3 & temp$high_rent_value==0,]
+  temp2['mpay_value'] <- predict(iv_reg_1st[[3]],temp2)
+iv_reg[[3]] <- lm(iv_formula_2, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==-0.3 & temp$high_rent_value==1,]
+  temp2['mpay_value'] <- predict(iv_reg_1st[[4]],temp2)
+iv_reg[[4]] <- lm(iv_formula_2, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==-0.5 & temp$high_rent_value==0,]
+  temp2['mpay_value'] <- predict(iv_reg_1st[[5]],temp2)
+iv_reg[[5]] <- lm(iv_formula_2, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==-0.5 & temp$high_rent_value==1,]
+  temp2['mpay_value'] <- predict(iv_reg_1st[[6]],temp2)
+iv_reg[[6]] <- lm(iv_formula_2, data=temp2)
+
+stargazer(iv_reg,type = output.type,no.space = TRUE,omit =omit,omit.labels = omit.labels,column.labels   = c("20% NE (rv<med)","20% NE (rv>med)","30% NE (rv<med)","30% NE (rv>med)", "50% NE (rv<med)", "50% NE (rv>med)"), omit.stat = omit.stat)
+
+```
+
+# Positive Equity: Default ~ Mortgage-to-value + rent-to-value
+
+* Sample: Loan enters in to the sample after borrower reaching the particular positive equity threshold and the default indicates whether borrower defaulted in the following 12 months after reaching the negative equity threshold.
+* mtg30us: 30-Year Fixed Rate Mortgage Average in the United States in the loan origination month
+* interest_diff: interest rate - mtg30us
+* rent-to-value : median rent/median value for the zip code in the negative equity quarter
+
+## Positive Equity: First Stage
+```{r tslsrent_pe_1st}
+temp <- loan_data[loan_data$ne_cutoff %in% c(0.1,0.3,0.5),]
+temp <- temp[temp$org_year<=2008 & temp$org_year>=2004 & temp$ne_year<=2012,]
+# temp <- temp[sample(nrow(temp),100000),]
+
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","current_housevalue","interest_diff","zip_year","zip_orgyear","mtg30us","age_t"))
+
+
+iv_reg_1st <- list()
+iv_reg_1st[[1]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==0.1,])
+iv_reg_1st[[2]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==0.3,])
+iv_reg_1st[[3]] <- lm(as.formula(first_stage_formula), data=temp[temp$ne_cutoff==0.5,])
+
+
+stargazer(iv_reg_1st,type = output.type,no.space = TRUE,omit =omit,omit.labels = omit.labels,column.labels   = c("10% PE","30% PE","50% PE"),omit.stat = omit.stat)
+```
+
+## Positive Equity: IV Regressions
+
+```{r tslsrent_pe_2nd}
+iv_reg <- list()
+iv_reg[[1]] <- lm(iv_formula, data=temp[temp$ne_cutoff==0.1,])
+
+  temp2 <- temp[temp$ne_cutoff==0.1,]
+   iv_reg_1st[[1]] <- lm(as.formula(first_stage_formula), data=temp2)
+  temp2['mpay_value'] <- predict(iv_reg_1st[[1]])
+iv_reg[[2]] <- lm(iv_formula, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==0.3,]
+  iv_reg_1st[[2]] <- lm(as.formula(first_stage_formula), data=temp2)
+  temp2['mpay_value'] <- predict(iv_reg_1st[[2]])
+iv_reg[[3]] <- lm(iv_formula, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==0.5,]
+  iv_reg_1st[[3]] <- lm(as.formula(first_stage_formula), data=temp2)
+  temp2['mpay_value'] <- predict(iv_reg_1st[[3]])
+iv_reg[[4]] <- lm(iv_formula, data=temp2)
+
+stargazer(iv_reg,type = output.type,no.space = TRUE,omit =omit,omit.labels = omit.labels,column.labels   = c("OLS 10% PE","IV 10% PE","IV 30% PE","IV 50% PE"), omit.stat = omit.stat)
+```
+
+## Positive Equity: IV Regressions (Split by rent-to-value)
+
+* Less than median: Loans from zip codes where median rent-to-value is less than the median(rent-to-value) in the same quarter
+* Greater than median: Loans from zip codes where median rent-to-value is greater than the median(rent-to-value) in the same quarter
+
+```{r tslsrent_pe_2nd_2}
+
+iv_reg_1st <- list()
+
+iv_reg <- list()
+  temp2 <- temp[temp$ne_cutoff==0.1 & temp$high_rent_value==0,]
+  iv_reg_1st[[1]] <- lm(as.formula(first_stage_formula), data=temp2)
+  temp2['mpay_value'] <- predict(iv_reg_1st[[1]])
+iv_reg[[1]] <- lm(iv_formula_2, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==0.1 & temp$high_rent_value==1,]
+  iv_reg_1st[[2]] <- lm(as.formula(first_stage_formula),data = temp2)
+  temp2['mpay_value'] <- predict(iv_reg_1st[[2]])
+iv_reg[[2]] <- lm(iv_formula_2, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==0.3 & temp$high_rent_value==0,]
+  iv_reg_1st[[3]] <- lm(as.formula(first_stage_formula),data=temp2)
+  temp2['mpay_value'] <- predict(iv_reg_1st[[3]])
+iv_reg[[3]] <- lm(iv_formula_2, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==0.3 & temp$high_rent_value==1,]
+  iv_reg_1st[[4]] <- lm(as.formula(first_stage_formula), data=temp2)
+  temp2['mpay_value'] <- predict(iv_reg_1st[[4]])
+iv_reg[[4]] <- lm(iv_formula_2, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==0.5 & temp$high_rent_value==0,]
+  iv_reg_1st[[5]] <- lm(as.formula(first_stage_formula), data=temp2)
+  temp2['mpay_value'] <- predict(iv_reg_1st[[5]])
+iv_reg[[5]] <- lm(iv_formula_2, data=temp2)
+
+  temp2 <- temp[temp$ne_cutoff==0.5 & temp$high_rent_value==1,]
+  iv_reg_1st[[6]] <- lm(as.formula(first_stage_formula), data=temp2)
+  temp2['mpay_value'] <- predict(iv_reg_1st[[6]])
+iv_reg[[6]] <- lm(iv_formula_2, data=temp2)
+
+stargazer(iv_reg,type = output.type,no.space = TRUE,omit =omit,omit.labels = omit.labels,column.labels   = c("10% PE (rv<med)","10% PE (rv>med)","30% PE (rv<med)","30% PE (rv>med)", "50% PE (rv<med)", "50% PE (rv>med)"), omit.stat = omit.stat)
+
+```
