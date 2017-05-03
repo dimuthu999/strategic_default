@@ -1,5 +1,5 @@
 ---
-title: "Mortgage Payment and Default"
+title: "Mortgage Payment Size and Default"
 output: 
   html_document: 
     css: bodycss.css
@@ -140,7 +140,7 @@ stargazer(loan_data[loan_data$ne_cutoff==-0.3, c("def","prepaid","mpay_value","r
 
 <a href="#top">Back to top</a>
 
-# Negative Equity: Default ~ Mortgage-to-value + rent-to-value
+# NEGATIVE EQUITY
 
 ## Negative Equity: OLS
 
@@ -190,7 +190,7 @@ printtable(iv_reg_1st,"","mpay value",note,"none","")
 * Results are similar for other levels of negative equity
 
 ```{r figure}
-temp <- loan_data[loan_data$ne_cutoff == -0.2,]
+temp <- loan_data[loan_data$ne_cutoff == -0.3,]
 temp <- completeFun(temp,c("mtg30us","mpay_value","zip_year","zip_orgyear"))
 
 adj_mpay_value <- felm(mpay_value~0|factor(zip_year)+factor(zip_orgyear),data=temp)
@@ -271,9 +271,11 @@ stargazer(felm_regs,type = output.type,no.space = TRUE,column.labels = gsub("_",
 
 <a href="#top">Back to top</a>
 
-# Impact of Rent
+# RENT
 
 ## Rent Regressions
+
+### log(rent) ~ log(home_price)
 ```{r rent_regression}
 setwd(file_path)
 
@@ -332,34 +334,41 @@ rent <- readRDS(file="rent_regression_data.rds")
 
 formula_list<- list()
 formula_list[[1]] <- as.formula("log(rent)~log(home_price)")
-formula_list[[2]] <- as.formula("log(rent)~log(home_price)+factor(year)")
-formula_list[[3]] <- as.formula("log(rent)~log(home_price)+factor(year)+factor(zip)")
+formula_list[[2]] <- as.formula("log(rent)~log(home_price)|factor(year)")
+formula_list[[3]] <- as.formula("log(rent)~log(home_price)|factor(year)+factor(zip)")
 
 ols <- list()
-ols[[1]] <- lm(formula_list[[1]],rent)
-ols[[2]] <- lm(formula_list[[2]],rent)
-ols[[3]] <- lm(formula_list[[3]],rent)
+ols[[1]] <- felm(formula_list[[1]],rent)
+ols[[2]] <- felm(formula_list[[2]],rent)
+ols[[3]] <- felm(formula_list[[3]],rent)
 
 stargazer(ols,type = output.type,no.space = TRUE,omit =c("year","zip"),omit.labels = c("year","zip"))
 
+```
 
-formula_list[[4]] <- as.formula("rent_diff~price_diff+factor(year)+factor(zip)")
+### log(rent(t) - rent(t-6)) ~ log(homeprice(t) - homeprice(t-6))
+year and zip fixed effects
+```{r rent_4}
 
-ols <- list()
-ols[[1]] <- lm(formula_list[[4]],rent)
-ols[[2]] <- lm(formula_list[[4]],rent[rent$price_diff<0,])
-ols[[3]] <- lm(formula_list[[4]],rent[rent$price_diff>0,])
-
-stargazer(ols,type = output.type,no.space = TRUE,omit =c("year","zip"),omit.labels = c("year","zip"),column.labels = c("All","Price Decreases","Price Increases"))
-
-
-
+formula_list[[4]] <- as.formula("rent_diff~price_diff|factor(year)+factor(zip)")
 
 ols <- list()
-ols[[1]] <- lm(formula_list[[3]],rent[rent$high_value==1,])
-ols[[2]] <- lm(formula_list[[3]],rent[rent$high_value==0, ])
+ols[[1]] <- felm(formula_list[[4]],rent)
+ols[[2]] <- felm(formula_list[[4]],rent[rent$price_diff<0,])
+ols[[3]] <- felm(formula_list[[4]],rent[rent$price_diff>0,])
 
-stargazer(ols,type = output.type,no.space = TRUE,omit =c("year","zip"),omit.labels = c("year","zip"),column.labels = c("High Value Houses","Low Value Houses"))
+stargazer(ols,type = output.type,no.space = TRUE,column.labels = c("All","Price Decreases","Price Increases"))
+
+```
+
+### log(rent) ~ log(home_price) : Split by value
+year and zip fixed effects
+```{r rent_3}
+ols <- list()
+ols[[1]] <- felm(formula_list[[3]],rent[rent$high_value==1,])
+ols[[2]] <- felm(formula_list[[3]],rent[rent$high_value==0, ])
+
+stargazer(ols,type = output.type,no.space = TRUE,column.labels = c("High Value Houses","Low Value Houses"))
 ```
 
 
@@ -387,8 +396,7 @@ printtable(felm_regs,"","default",note,"none","")
 <a href="#top">Back to top</a>
 
 ## Negative Equity: IV Regressions (Split by rent-to-value)
-* Less than median: Loans from zip codes where median rent-to-value is less than the median(rent-to-value) in the same quarter
-* Greater than median: Loans from zip codes where median rent-to-value is greater than the median(rent-to-value) in the same quarter
+
 ```{r ne_rent_split}
 temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
 temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
@@ -434,7 +442,7 @@ felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
 
 condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
 
-printtable(felm_regs,"","default",note,"mtg30us",list(condf))
+printtable(felm_regs,"","prepayment",note,"mtg30us",list(condf))
 
 ```
 
@@ -458,7 +466,7 @@ felm_regs[[8]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4 & temp$high_rent==
 felm_regs[[9]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5 & temp$high_rent==0,])
 felm_regs[[10]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5 & temp$high_rent==1,])
 
-printtable(felm_regs,"","default",note,"mtg30us","")
+printtable(felm_regs,"","prepayment",note,"mtg30us","")
 
 ```
 
@@ -483,7 +491,7 @@ printtable(felm_regs,c("<=2006",">2006"),"default",note,"mtg30us","")
 
 
 
-# Positive Equity: Default ~ Mortgage-to-value + rent-to-value
+# POSITIVE EQUITY
 
 ```{r pos_equity_init}
 setwd(file_path)
@@ -611,6 +619,75 @@ felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==0.3 & temp$high_rent_va
 felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==0.5 & temp$high_rent_value==0,])
 felm_regs[[6]] <- felm(formula,data=temp[temp$ne_cutoff==0.5 & temp$high_rent_value==1,])
 
-printtable(felm_regs,"","default",note,"mtg30us","")
+printtable(felm_regs,"","Prepayment",note,"mtg30us","")
 
+```
+
+
+
+# Other Splits
+
+## First stage by year (NE 30%)
+
+```{r first_stage_by_year}
+
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3),]
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+temp$mpay_value  = temp$mpay_value * 100000
+formula <- as.formula("mpay_value~mtg30us+fico+ltv+log(upb)+dti|factor(zip_year)+factor(org_year)|0|zip_year")
+
+iv_reg_1st <- list()
+iv_reg_1st[[1]] <- felm(formula, data=temp[temp$org_year<=2006,])
+iv_reg_1st[[2]] <- felm(formula, data=temp[temp$org_year >=2007,])
+
+
+printtable(iv_reg_1st,c("<=2006",">=2007"),"mpay value",note,"none","")
+```
+
+## Control Variables <=2006
+
+```{r othervariables_lt2006}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3) & loan_data$org_year<=2006,]
+temp$zip_orgyear <- paste(temp$zip,temp$org_year)
+temp['std_mpay_value'] <- (temp$mpay_value - mean(temp$mpay_value,na.rm=TRUE))/sd(temp$mpay_value,na.rm=TRUE)
+
+
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","current_housevalue","interest_diff","zip_year","zip_orgyear","mtg30us","age_t"))
+
+formula_text <- "~0|factor(zip_year)+factor(zip_orgyear)|(std_mpay_value~mtg30us)|zip_year"
+
+variables <- c("log(ltv)","log(upb)","log(fico)","log(dti)","log(current_housevalue)","interest_diff")
+i = 1
+felm_regs <- list()
+for(variable in variables) {
+  # print(i)
+  felm_regs[[i]] <- felm(as.formula(paste(variable,formula_text,sep="")),data=temp)
+  i=i+1
+}
+
+stargazer(felm_regs,type = output.type,no.space = TRUE,column.labels = gsub("_","",variables),notes = note)
+```
+
+## Control Variables >=2007
+
+```{r othervariables_gt2007}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3) & loan_data$org_year>=2007,]
+temp$zip_orgyear <- paste(temp$zip,temp$org_year)
+temp['std_mpay_value'] <- (temp$mpay_value - mean(temp$mpay_value,na.rm=TRUE))/sd(temp$mpay_value,na.rm=TRUE)
+
+
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","current_housevalue","interest_diff","zip_year","zip_orgyear","mtg30us","age_t"))
+
+formula_text <- "~0|factor(zip_year)+factor(zip_orgyear)|(std_mpay_value~mtg30us)|zip_year"
+
+variables <- c("log(ltv)","log(upb)","log(fico)","log(dti)","log(current_housevalue)","interest_diff")
+i = 1
+felm_regs <- list()
+for(variable in variables) {
+  # print(i)
+  felm_regs[[i]] <- felm(as.formula(paste(variable,formula_text,sep="")),data=temp)
+  i=i+1
+}
+
+stargazer(felm_regs,type = output.type,no.space = TRUE,column.labels = gsub("_","",variables),notes = note)
 ```
