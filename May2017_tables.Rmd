@@ -1,0 +1,753 @@
+---
+title: "Mortgage Payment Size and Default"
+output: 
+  html_document: 
+    css: bodycss.css
+    fig_height: 6
+    fig_width: 12
+    toc: yes
+    number_section: yes
+---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE,echo=FALSE)
+```
+
+```{r echo=FALSE}
+rm(list=ls())
+library(data.table)
+library(zoo)
+library(sqldf)
+library(stargazer)
+library(survival)
+library(reshape2)
+library(zipcode)
+library(ggplot2)
+library(multiwayvcov)
+library(sandwich)
+library(Matching)
+library(AER)
+library(FinCal)
+library(ggplot2)
+library(reshape2)
+library(scales)
+library(pracma)
+library(plyr)
+library(lfe)
+library(dplyr)
+library(DataCombine)
+file_path = "E:/strategic_default"
+setwd(file_path)
+
+
+output.type = "text"
+
+completeFun <- function(data, desiredCols) {
+  completeVec <- complete.cases(data[, desiredCols])
+  return(data[completeVec, ])
+}
+
+
+# mtgrates <- read.csv(file="MORTGAGE30US.csv")
+# mtgrates$date <- as.Date(mtgrates$date,origin="1900-01-01")
+# mtgrates$date <- as.Date(paste(substr(as.character(mtgrates$date),1,7),"-01",sep=""))
+# mtgrates <- ddply(mtgrates,.(date),summarise,mtg30us=median(mtg30us,na.rm = TRUE))
+# 
+# 
+# rent <- read.csv("Zip_MedianRentalPrice_Sfr.csv")
+# rent <- data.frame(rent[1], stack(rent[7:ncol(rent)]))
+# rent$ind <- as.character(rent$ind)
+# rent['month']<- as.Date(paste(substr(rent$ind,2,5),substr(rent$ind,7,8),"01",sep = "-"))
+# rent$ind <- NULL
+# names(rent)<-c("zip","rent","month")
+# rent['zip']<-(rent$zip %/% 100)*100
+# rent <- rent[rent$month>='2011-01-01' & rent$month<'2012-01-01',]
+# rent <- ddply(rent,.(zip),summarise,rent=median(rent,na.rm = TRUE))
+# 
+# hpi <- read.csv("Zip_Zhvi_SingleFamilyResidence.csv")
+# hpi <- data.frame(hpi[2], stack(hpi[8:ncol(hpi)]))
+# names(hpi)<-c("zip","value","month")
+# hpi$zip <- floor(hpi$zip/100)*100
+# hpi$month <- as.Date(paste(substr(hpi$month,2,5),substr(hpi$month,7,8),"01",sep = "-"))
+# hpi$value <- as.double(hpi$value)
+# hpi <- hpi[hpi$month>='2011-01-01' & hpi$month<'2012-01-01',]
+# hpi <- hpi[hpi$zip %in% unique(rent$zip),]
+# hpi <- ddply(hpi,.(zip),summarise,value=median(value,na.rm = TRUE))
+# 
+# rent <- merge(rent,hpi,by="zip")
+# rent['rent_value'] <- rent$rent/rent$value
+# rent['high_rent'] <- ifelse(rent$rent>median(rent$rent,na.rm = TRUE),1,0)
+# rent['high_rent_value'] <- ifelse(rent$rent_value>median(rent$rent_value,na.rm = TRUE),1,0)
+# rent <- na.omit(rent)
+# rent$rent <- NULL
+# rent$value <- NULL
+# 
+# ###########################################################
+# # loan_data
+# file_names <- c("cox_ne_-0.1new_Apr282017_60day.rds","cox_ne_-0.2new_Apr282017_60day.rds","cox_ne_-0.3_Apr282017_60day.rds","cox_ne_-0.4_Apr282017_60day.rds","cox_ne_-0.5_Apr282017_60day.rds")
+# #
+# loan_data <- NULL
+# 
+# for(fn in file_names){
+#   print(fn)
+#   temp <- readRDS(file=fn)
+# 
+#   temp <- temp[!duplicated(temp[,c("loanid")]),]
+# 
+#   temp <- merge(temp,mtgrates,by.x=c("orgdate"),by.y = c("date"))
+#   temp['mpay_value'] <- temp$mpay/temp$current_housevalue
+#   temp['interest_diff'] <- temp$interestrate - temp$mtg30us
+#   temp['ne_year'] <- as.numeric(format(as.Date(as.character(temp$current_date)),"%Y"))
+#   temp['zip_year'] <- paste(temp$zip,temp$ne_year,sep="_")
+#   temp['org_year'] <- as.numeric(format(temp$orgdate,"%Y"))
+#   if(median(temp$ne_cutoff,na.rm = TRUE)==-0.5)  temp$ org_year <- ifelse(temp$org_year<=2007 & temp$org_year>=2004,2005,ifelse(temp$org_year<=2011 & temp$org_year>=2008,2010,ifelse(temp$org_year<=2003,2000,2013)))
+#   temp['zip_orgyear'] <- paste(temp$zip,temp$org_year,sep="_")
+# 
+# 
+#   temp  <- merge(temp,rent,by=c("zip"),all.x = TRUE)
+#   loan_data = rbind(loan_data,temp)
+# }
+# 
+# saveRDS(loan_data,file="loan_data_Apr282017.rds")
+
+loan_data <- readRDS(file="loan_data_Apr282017.rds")
+
+cluster_by = "zip_year"
+
+note =c("Fixed Effects: zip x ne year, zip x org year","Standard Errors clustered by zip x ne year")
+printtable <- function(reg,column.labels,depvar,note,iv,lines) {
+  stargazer(reg,type=output.type,no.space = TRUE,omit.stat = c("f","rsq","ser"),notes= note,column.labels = column.labels, dep.var.labels = "",dep.var.caption   = paste("Y: ",gsub("_"," ",depvar),"; iv: ",gsub("_"," ",iv)),dep.var.labels.include = FALSE,add.lines = lines)
+}
+
+property_tax <- readRDS("prop_tax.rds")
+        
+loan_data <- merge(loan_data,property_tax,by="zip",all.x = TRUE)
+loan_data['prop_tax_value'] <- (loan_data$current_housevalue*loan_data$prop_tax_pct)/12
+loan_data$mpay <- loan_data$mpay+loan_data$prop_tax_value*0.8+loan_data$upb*(100/loan_data$ltv)*0.01/12-loan_data$currentupb_t*loan_data$interestrate*0.2/1200
+
+# adjusted for property taxes, maintainance costs and tax benefit on interest
+loan_data['mpay_value_2'] <- loan_data$mpay/loan_data$current_housevalue
+
+```
+
+# Descriptive Statistics
+## 30% Negative Equity Loans
+```{r ne20_desc}
+
+stargazer(loan_data[loan_data$ne_cutoff==-0.3, c("def","prepaid","mpay_value","rent_value","fico","rent","mpay","ltv","dti","upb","interestrate","org_year","ne_year")], type = output.type, summary.stat = c("mean", "sd", "p25", "median", "p75", "n"),notes = "",digits = 5)
+```
+
+
+
+<a href="#top">Back to top</a>
+
+# NEGATIVE EQUITY
+
+## Negative Equity: OLS
+
+```{r ne_ols}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5),]
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti+mpay_value|factor(zip_year)+factor(zip_orgyear)|0|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
+
+printtable(felm_regs,"","default",note,"none","")
+
+```
+
+<a href="#top">Back to top</a>
+
+
+## Negative Equity: First Stage
+```{r ne_firststage}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5),]
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+temp$mpay_value  = temp$mpay_value * 100000
+formula <- as.formula("mpay_value~mtg30us+fico+ltv+log(upb)+dti|factor(zip_year)+factor(org_year)|0|zip_year")
+
+iv_reg_1st <- list()
+iv_reg_1st[[1]] <- felm(formula, data=temp[temp$ne_cutoff==-0.1,])
+iv_reg_1st[[2]] <- felm(formula, data=temp[temp$ne_cutoff==-0.2,])
+iv_reg_1st[[3]] <- felm(formula, data=temp[temp$ne_cutoff==-0.3,])
+iv_reg_1st[[4]] <- felm(formula, data=temp[temp$ne_cutoff==-0.4,])
+iv_reg_1st[[5]] <- felm(formula, data=temp[temp$ne_cutoff==-0.5,])
+
+printtable(iv_reg_1st,"","mpay value",note,"none","")
+```
+
+<a href="#top">Back to top</a>
+
+## Univariate Evidence (30% Negative equity sample)
+
+* FE adjusted mortgage-to-value = mortgage-to-value - predicted mortgage-to-value from (mortgage-to-value~ zip * ne year + zip * org year)
+* Results are similar for other levels of negative equity
+
+```{r figure}
+temp <- loan_data[loan_data$ne_cutoff == -0.3,]
+temp <- completeFun(temp,c("mtg30us","mpay_value","zip_year","zip_orgyear"))
+
+adj_mpay_value <- felm(mpay_value~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+adj_mtg30us <- felm(mtg30us~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+temp['resid_mpay_value'] <- floor(adj_mpay_value$residuals*100000)/100
+temp['resid_mtg30us'] <- floor(adj_mtg30us$residuals*100)/100
+# temp$mtg30us <- floor(temp$mtg30us/0.001)/1000
+# temp <- temp[temp$mtg30us>6 & temp$mtg30us<=6.5,]
+
+temp_sum <- ddply(temp,.(resid_mtg30us),summarise,p50=quantile(resid_mpay_value,0.5,na.rm = TRUE),avg = mean(resid_mpay_value,na.rm = TRUE))
+
+ggplot(temp_sum, aes(x=resid_mtg30us, y=avg)) + geom_point(shape=1)+  geom_smooth(method=lm) + theme_bw()+ylab("FE adjusted median mortgage-to-value") + xlab("FE adjusted 30 year fixed rate mortgage rate")+ labs(title = "Panel A")
+
+
+temp <- temp[temp$resid_mpay_value <= quantile(temp$resid_mpay_value,0.95,na.rm = TRUE) & temp$resid_mpay_value >= quantile(temp$resid_mpay_value,0.05,na.rm = TRUE),]
+# temp$resid_mpay_value <- floor(temp$resid_mpay_value/5)*5/1e5
+
+adj_default <- felm(def~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+temp['resid_default'] <- floor(adj_default$residuals*100)/100
+
+temp_sum <- ddply(temp,.(resid_mpay_value),summarise,def = mean(resid_default,na.rm = TRUE))
+
+ggplot(temp_sum, aes(x=resid_mpay_value, y=def)) + geom_point(shape=1)+  geom_smooth(method=lm) + theme_bw()+ylab("FE adjusted Default %") + xlab("FE adjusted mortgage-to-value")+ labs(title = "Panel B")
+
+```
+
+<a href="#top">Back to top</a>
+
+
+
+
+## Negative Equity: IV Regressions
+
+```{r ne_iv}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(mpay_value~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
+
+condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,"","default",note,"mtg30us",list(condf))
+
+```
+
+<a href="#top">Back to top</a>
+
+# Control Variables
+```{r othervariables}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3),]
+temp$zip_orgyear <- paste(temp$zip,temp$org_year)
+temp['std_mpay_value'] <- (temp$mpay_value - mean(temp$mpay_value,na.rm=TRUE))/sd(temp$mpay_value,na.rm=TRUE)
+
+
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","current_housevalue","interest_diff","zip_year","zip_orgyear","mtg30us","age_t"))
+
+formula_text <- "~0|factor(zip_year)+factor(zip_orgyear)|(std_mpay_value~mtg30us)|zip_year"
+
+variables <- c("log(ltv)","log(upb)","log(fico)","log(dti)","log(current_housevalue)","interest_diff")
+i = 1
+felm_regs <- list()
+for(variable in variables) {
+  # print(i)
+  felm_regs[[i]] <- felm(as.formula(paste(variable,formula_text,sep="")),data=temp)
+  i=i+1
+}
+
+stargazer(felm_regs,type = output.type,no.space = TRUE,column.labels = gsub("_","",variables),notes = note)
+```
+
+<a href="#top">Back to top</a>
+
+# RENT
+
+## Rent Regressions
+
+### log(rent) ~ log(home_price)
+```{r rent_regression}
+setwd(file_path)
+
+# home_price <- read.csv("Zip_MedianSoldPrice_AllHomes.csv")
+# home_price <- data.frame(home_price[2], stack(home_price[8:ncol(home_price)]))
+# home_price['date']<- as.Date(paste(substr(home_price$ind,2,5),substr(home_price$ind,7,8),"01",sep = "-"))
+# home_price$ind <- NULL
+# home_price['month'] <- (as.yearmon(home_price$date))
+# home_price <- home_price[home_price$date>="2010-01-01",]
+# names(home_price) <- c("zip","home_price","date","month")
+# # home_price$date <- NULL
+# # home_price['zip']<-(home_price$zip %/% 100)
+# 
+# rent <- read.csv("Zip_MedianRentalPrice_Sfr.csv") 
+# rent <- data.frame(rent[1], stack(rent[7:ncol(rent)]))
+# rent['date']<- as.Date(paste(substr(rent$ind,2,5),substr(rent$ind,7,8),"01",sep = "-"))
+# rent$ind <- NULL
+# rent['month'] <- (as.yearmon(rent$date))
+# # rent$date <- NULL
+# names(rent)<-c("zip","rent","date","month")
+# # rent['zip']<-(rent$zip %/% 100)
+# 
+# 
+# rent <- merge(rent, home_price,by=c("zip","date"))
+# 
+# 
+# rent <- rent[complete.cases(rent),]
+# # rent <- ddply(rent,.(zip,month),summarise,rent=mean(rent,na.rm = TRUE),hpi=mean(hpi,na.rm = TRUE))
+# 
+# rent['year'] <- as.numeric(format(rent$date,"%Y"))
+# rent$zip <- as.factor(rent$zip)
+# rent$year <- as.factor(rent$year)
+# 
+# rent <- rent[order(rent$zip,rent$date),]
+# rent<-slide(rent, Var = "home_price",slideBy = -6,NewVar = "home_price_6")
+# rent <- slide(rent, Var = "date",slideBy = -6,NewVar = "date_6")
+# rent <- slide(rent, Var = "rent",slideBy = -6,NewVar = "rent_6")
+# rent['month_diff'] <- floor(as.numeric(rent$date - rent$date_6)/30)
+# rent <- rent[rent$month_diff %in% c(5,6,7),]
+# rent$month.x <- NULL
+# rent$month.y <- NULL
+# rent$month_diff <- NULL
+# rent['price_diff'] <- log(rent$home_price/rent$home_price_6)
+# rent['rent_diff'] <- log(rent$rent/rent$rent_6)
+# 
+# temp <- home_price[home_price$date <= '2012-01-01' & home_price$zip %in% unique(rent$zip),]
+# temp <- ddply(temp,.(zip),summarise,home_price=mean(home_price,na.rm=TRUE))
+# temp['high_value'] <- ifelse(temp$home_price > median(temp$home_price,na.rm = TRUE),1,0)
+# temp$home_price <- NULL
+# 
+# rent <- merge(rent, temp, by="zip",all.x = TRUE)
+# 
+# saveRDS(rent, file="rent_regression_data.rds")
+
+rent <- readRDS(file="rent_regression_data.rds")
+
+formula_list<- list()
+formula_list[[1]] <- as.formula("log(rent)~log(home_price)")
+formula_list[[2]] <- as.formula("log(rent)~log(home_price)|factor(year)")
+formula_list[[3]] <- as.formula("log(rent)~log(home_price)|factor(year)+factor(zip)")
+
+ols <- list()
+ols[[1]] <- felm(formula_list[[1]],rent)
+ols[[2]] <- felm(formula_list[[2]],rent)
+ols[[3]] <- felm(formula_list[[3]],rent)
+
+stargazer(ols,type = output.type,no.space = TRUE,omit =c("year","zip"),omit.labels = c("year","zip"))
+
+```
+
+### log(rent(t) - rent(t-6)) ~ log(homeprice(t) - homeprice(t-6))
+year and zip fixed effects
+```{r rent_4}
+
+formula_list[[4]] <- as.formula("rent_diff~price_diff|factor(year)+factor(zip)")
+
+ols <- list()
+ols[[1]] <- felm(formula_list[[4]],rent)
+ols[[2]] <- felm(formula_list[[4]],rent[rent$price_diff<0,])
+ols[[3]] <- felm(formula_list[[4]],rent[rent$price_diff>0,])
+
+stargazer(ols,type = output.type,no.space = TRUE,column.labels = c("All","Price Decreases","Price Increases"))
+
+```
+
+### log(rent) ~ log(home_price) : Split by value
+year and zip fixed effects
+```{r rent_3}
+ols <- list()
+ols[[1]] <- felm(formula_list[[3]],rent[rent$high_value==1,])
+ols[[2]] <- felm(formula_list[[3]],rent[rent$high_value==0, ])
+
+stargazer(ols,type = output.type,no.space = TRUE,column.labels = c("High Value Houses","Low Value Houses"))
+```
+
+
+
+## Negative Equity: OLS (mpayvalue*rent)
+
+```{r ols_rent}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5),]
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti+mpay_value*rent|factor(zip_year)+factor(zip_orgyear)|0|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
+
+printtable(felm_regs,"","default",note,"none","")
+
+```
+
+<a href="#top">Back to top</a>
+
+## Negative Equity: IV Regressions (Split by rent-to-value)
+
+```{r ne_rent_split}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(mpay_value~mtg30us)|zip_year")
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1 & temp$high_rent_==0,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1 & temp$high_rent==1,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2 & temp$high_rent==0,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2 & temp$high_rent==1,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3 & temp$high_rent==0,])
+felm_regs[[6]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3 & temp$high_rent==1,])
+felm_regs[[7]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4 & temp$high_rent==0,])
+felm_regs[[8]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4 & temp$high_rent==1,])
+felm_regs[[9]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5 & temp$high_rent==0,])
+felm_regs[[10]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5 & temp$high_rent==1,])
+
+printtable(felm_regs,c("10% low rent","10% high rent","20% low rent","20% high rent","30% low rent","30% high rent","40% low rent","40% high rent","50% low rent","50% high rent"),"default",note,"mtg30us","")
+
+```
+
+<a href="#top">Back to top</a>
+
+
+
+# Negative Equity Prepayments
+
+## Negative Equity: Prepayments IV Regressions
+
+```{r prepayment_iv}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("prepaid","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("prepaid~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(mpay_value~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
+
+condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+<<<<<<< HEAD
+printtable(felm_regs,c("10%","20%","30%","40%","50%"),"prepayment",note,"mtg30us",list(condf))
+=======
+printtable(felm_regs,"","prepayment",note,"mtg30us",list(condf))
+>>>>>>> 5c897611e6e297651b38dfb1f37fc71217c7f6d8
+
+```
+
+
+## Negative Equity: Prepayments IV Regressions (Split by rent-to-value)
+
+```{r ne_prepay_rent_split}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("prepaid","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("prepaid~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(mpay_value~mtg30us)|zip_year")
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1 & temp$high_rent_==0,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1 & temp$high_rent==1,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2 & temp$high_rent==0,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2 & temp$high_rent==1,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3 & temp$high_rent==0,])
+felm_regs[[6]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3 & temp$high_rent==1,])
+felm_regs[[7]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4 & temp$high_rent==0,])
+felm_regs[[8]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4 & temp$high_rent==1,])
+felm_regs[[9]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5 & temp$high_rent==0,])
+felm_regs[[10]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5 & temp$high_rent==1,])
+
+<<<<<<< HEAD
+printtable(felm_regs,c("10% low rent","10% high rent","20% low rent","20% high rent","30% low rent","30% high rent","40% low rent","40% high rent","50% low rent","50% high rent"),"prepayment",note,"mtg30us","")
+=======
+printtable(felm_regs,"","prepayment",note,"mtg30us","")
+>>>>>>> 5c897611e6e297651b38dfb1f37fc71217c7f6d8
+
+```
+
+<a href="#top">Back to top</a>
+
+
+
+## Negative Equity: IV Regressions (Split by origination year)
+```{r org_year_split}
+
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(mpay_value~mtg30us)|zip_year")
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2 & temp$org_year<= 2006,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2 & temp$org_year> 2006,])
+
+printtable(felm_regs,c("<=2006",">2006"),"default",note,"mtg30us","")
+```
+
+
+
+
+# POSITIVE EQUITY
+
+```{r pos_equity_init}
+setwd(file_path)
+
+# mtgrates <- read.csv(file="MORTGAGE30US.csv")
+# mtgrates$date <- as.Date(mtgrates$date,origin="1900-01-01")
+# mtgrates$date <- as.Date(paste(substr(as.character(mtgrates$date),1,7),"-01",sep=""))
+# mtgrates <- ddply(mtgrates,.(date),summarise,mtg30us=median(mtg30us,na.rm = TRUE))
+# 
+# 
+# rent <- read.csv("Zip_MedianRentalPrice_Sfr.csv")
+# rent <- data.frame(rent[1], stack(rent[7:ncol(rent)]))
+# rent$ind <- as.character(rent$ind)
+# rent['month']<- as.Date(paste(substr(rent$ind,2,5),substr(rent$ind,7,8),"01",sep = "-"))
+# rent$ind <- NULL
+# names(rent)<-c("zip","rent","month")
+# rent['zip']<-(rent$zip %/% 100)*100
+# rent <- rent[rent$month>='2011-01-01' & rent$month<'2012-01-01',]
+# rent <- ddply(rent,.(zip),summarise,rent=median(rent,na.rm = TRUE))
+# 
+# hpi <- read.csv("Zip_Zhvi_SingleFamilyResidence.csv")
+# hpi <- data.frame(hpi[2], stack(hpi[8:ncol(hpi)]))
+# names(hpi)<-c("zip","value","month")
+# hpi$zip <- floor(hpi$zip/100)*100
+# hpi$month <- as.Date(paste(substr(hpi$month,2,5),substr(hpi$month,7,8),"01",sep = "-"))
+# hpi$value <- as.double(hpi$value)
+# hpi <- hpi[hpi$month>='2011-01-01' & hpi$month<'2012-01-01',]
+# hpi <- hpi[hpi$zip %in% unique(rent$zip),]
+# hpi <- ddply(hpi,.(zip),summarise,value=median(value,na.rm = TRUE))
+# 
+# rent <- merge(rent,hpi,by="zip")
+# rent['rent_value'] <- rent$rent/rent$value
+# rent['high_rent'] <- ifelse(rent$rent>median(rent$rent,na.rm = TRUE),1,0)
+# rent['high_rent_value'] <- ifelse(rent$rent_value>median(rent$rent_value,na.rm = TRUE),1,0)
+# rent <- na.omit(rent)
+# rent$rent <- NULL
+# rent$value <- NULL
+# 
+# ###########################################################
+# # loan_data
+# file_names <- c("cox_ne_0.1_Apr282017_60day.rds","cox_ne_0.3_Apr282017_60day.rds","cox_ne_0.5_Apr282017_60day.rds","cox_ne_0.7_Apr282017_60day.rds")
+# #
+# loan_data <- NULL
+# 
+# for(fn in file_names){
+#   print(fn)
+#   temp <- readRDS(file=fn)
+# 
+#   temp <- temp[!duplicated(temp[,c("loanid")]),]
+# 
+#   temp <- merge(temp,mtgrates,by.x=c("orgdate"),by.y = c("date"))
+#   temp['mpay_value'] <- temp$mpay/temp$current_housevalue
+#   temp['interest_diff'] <- temp$interestrate - temp$mtg30us
+#   temp['ne_year'] <- as.numeric(format(as.Date(as.character(temp$current_date)),"%Y"))
+#   temp['zip_year'] <- paste(temp$zip,temp$ne_year,sep="_")
+#   temp['org_year'] <- as.numeric(format(temp$orgdate,"%Y"))
+#   temp['zip_orgyear'] <- paste(temp$zip,temp$org_year,sep="_")
+# 
+#   if(median(temp$ne_cutoff,na.rm=TRUE)>0 & nrow(temp)>50000) {
+#     temp <- temp[temp$org_year<=2010 & temp$ne_year<=2012,]
+#     if(nrow(temp)>50000) temp <- temp[sample(nrow(temp),50000),]
+#   }
+# 
+#   temp  <- merge(temp,rent,by=c("zip"),all.x = TRUE)
+#   loan_data = rbind(loan_data,temp)
+# }
+# 
+# saveRDS(loan_data,file="loan_data_pos_eqty_Apr262017.rds")
+
+loan_data_pe <- readRDS(file="loan_data_pos_eqty_Apr262017.rds")
+```
+
+
+## Positive Equity: Default IV Regressions
+```{r pos_equity_def}
+temp <- loan_data_pe[loan_data_pe$ne_cutoff %in% c(0.1,0.3,0.5),]
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(mpay_value~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==0.1 & is.finite(log(temp$upb)),])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==0.3 & is.finite(log(temp$upb)),])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==0.5 & is.finite(log(temp$upb)),])
+
+
+condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2))#,round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,c("10","30","50"),"default",note,"mtg30us",list(condf))
+```
+
+<a href="#top">Back to top</a>
+
+## Positive Equity: Prepayment IV Regressions
+```{r pos_eqt_prepay}
+temp <- loan_data_pe[loan_data_pe$ne_cutoff %in% c(0.1,0.3,0.5),]
+temp <- completeFun(temp,c("prepaid","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("prepaid~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(mpay_value~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==0.1 & is.finite(log(temp$upb)),])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==0.3 & is.finite(log(temp$upb)),])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==0.5 & is.finite(log(temp$upb)),])
+
+condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2))#,round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+printtable(felm_regs,c("10","30","50"),"Prepaid",note,"mtg30us",list(condf))
+```
+
+<a href="#top">Back to top</a>
+
+## Positive Equity Prepayments Rent Split
+```{r pos_equity_rent_split}
+temp <- loan_data_pe[loan_data_pe$ne_cutoff %in% c(0.1,0.3,0.5) ,]
+temp <- completeFun(temp,c("prepaid","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("prepaid~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(mpay_value~mtg30us)|zip_year")
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==0.1 & temp$high_rent_value==0,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==0.1 & temp$high_rent_value==1,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==0.3 & temp$high_rent_value==0,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==0.3 & temp$high_rent_value==1,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==0.5 & temp$high_rent_value==0,])
+felm_regs[[6]] <- felm(formula,data=temp[temp$ne_cutoff==0.5 & temp$high_rent_value==1,])
+
+<<<<<<< HEAD
+printtable(felm_regs,c("10 low rent","10 high rent","30 low rent","30 high rent","50 low rent","50 high rent"),"Prepayment",note,"mtg30us","")
+=======
+printtable(felm_regs,"","Prepayment",note,"mtg30us","")
+
+```
+
+
+
+# Other Splits
+
+## First stage by year (NE 30%)
+
+```{r first_stage_by_year}
+
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3),]
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+temp$mpay_value  = temp$mpay_value * 100000
+formula <- as.formula("mpay_value~mtg30us+fico+ltv+log(upb)+dti|factor(zip_year)+factor(org_year)|0|zip_year")
+
+iv_reg_1st <- list()
+iv_reg_1st[[1]] <- felm(formula, data=temp[temp$org_year<=2006,])
+iv_reg_1st[[2]] <- felm(formula, data=temp[temp$org_year >=2007,])
+
+
+printtable(iv_reg_1st,c("<=2006",">=2007"),"mpay value",note,"none","")
+```
+
+## Control Variables <=2006
+
+```{r othervariables_lt2006}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3) & loan_data$org_year<=2006,]
+temp$zip_orgyear <- paste(temp$zip,temp$org_year)
+temp['std_mpay_value'] <- (temp$mpay_value - mean(temp$mpay_value,na.rm=TRUE))/sd(temp$mpay_value,na.rm=TRUE)
+
+
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","current_housevalue","interest_diff","zip_year","zip_orgyear","mtg30us","age_t"))
+
+formula_text <- "~0|factor(zip_year)+factor(zip_orgyear)|(std_mpay_value~mtg30us)|zip_year"
+>>>>>>> 5c897611e6e297651b38dfb1f37fc71217c7f6d8
+
+variables <- c("log(ltv)","log(upb)","log(fico)","log(dti)","log(current_housevalue)","interest_diff")
+i = 1
+felm_regs <- list()
+for(variable in variables) {
+  # print(i)
+  felm_regs[[i]] <- felm(as.formula(paste(variable,formula_text,sep="")),data=temp)
+  i=i+1
+}
+
+stargazer(felm_regs,type = output.type,no.space = TRUE,column.labels = gsub("_","",variables),notes = note)
+```
+
+<<<<<<< HEAD
+
+
+# Other Splits
+
+## First stage by year (NE 30%)
+
+```{r first_stage_by_year}
+
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3),]
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+temp$mpay_value  = temp$mpay_value * 100000
+formula <- as.formula("mpay_value~mtg30us+fico+ltv+log(upb)+dti|factor(zip_year)+factor(org_year)|0|zip_year")
+
+iv_reg_1st <- list()
+iv_reg_1st[[1]] <- felm(formula, data=temp[temp$org_year<=2006,])
+iv_reg_1st[[2]] <- felm(formula, data=temp[temp$org_year >=2007,])
+
+
+printtable(iv_reg_1st,c("<=2006",">=2007"),"mpay value",note,"none","")
+```
+
+## Control Variables <=2006
+
+```{r othervariables_lt2006}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3) & loan_data$org_year<=2006,]
+temp$zip_orgyear <- paste(temp$zip,temp$org_year)
+temp['std_mpay_value'] <- (temp$mpay_value - mean(temp$mpay_value,na.rm=TRUE))/sd(temp$mpay_value,na.rm=TRUE)
+
+
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","current_housevalue","interest_diff","zip_year","zip_orgyear","mtg30us","age_t"))
+
+formula_text <- "~0|factor(zip_year)+factor(zip_orgyear)|(std_mpay_value~mtg30us)|zip_year"
+
+variables <- c("log(ltv)","log(upb)","log(fico)","log(dti)","log(current_housevalue)","interest_diff")
+i = 1
+felm_regs <- list()
+for(variable in variables) {
+  # print(i)
+  felm_regs[[i]] <- felm(as.formula(paste(variable,formula_text,sep="")),data=temp)
+  i=i+1
+}
+
+stargazer(felm_regs,type = output.type,no.space = TRUE,column.labels = gsub("_","",variables),notes = note)
+```
+
+=======
+>>>>>>> 5c897611e6e297651b38dfb1f37fc71217c7f6d8
+## Control Variables >=2007
+
+```{r othervariables_gt2007}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3) & loan_data$org_year>=2007,]
+temp$zip_orgyear <- paste(temp$zip,temp$org_year)
+temp['std_mpay_value'] <- (temp$mpay_value - mean(temp$mpay_value,na.rm=TRUE))/sd(temp$mpay_value,na.rm=TRUE)
+
+
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","current_housevalue","interest_diff","zip_year","zip_orgyear","mtg30us","age_t"))
+
+formula_text <- "~0|factor(zip_year)+factor(zip_orgyear)|(std_mpay_value~mtg30us)|zip_year"
+
+variables <- c("log(ltv)","log(upb)","log(fico)","log(dti)","log(current_housevalue)","interest_diff")
+i = 1
+felm_regs <- list()
+for(variable in variables) {
+  # print(i)
+  felm_regs[[i]] <- felm(as.formula(paste(variable,formula_text,sep="")),data=temp)
+  i=i+1
+}
+
+stargazer(felm_regs,type = output.type,no.space = TRUE,column.labels = gsub("_","",variables),notes = note)
+```
