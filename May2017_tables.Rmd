@@ -184,12 +184,13 @@ printtable(iv_reg_1st,"","mpay value",note,"none","")
 
 <a href="#top">Back to top</a>
 
-## Univariate Evidence (30% Negative equity sample)
+## Univariate Evidence - Nadaraya–Watson (30% Negative equity sample)
 
 * FE adjusted mortgage-to-value = mortgage-to-value - predicted mortgage-to-value from (mortgage-to-value~ zip * ne year + zip * org year)
 * Results are similar for other levels of negative equity
 
 ```{r figure}
+library(np)
 temp <- loan_data[loan_data$ne_cutoff == -0.3,]
 temp <- completeFun(temp,c("mtg30us","mpay_value","zip_year","zip_orgyear"))
 
@@ -197,13 +198,6 @@ adj_mpay_value <- felm(mpay_value~0|factor(zip_year)+factor(zip_orgyear),data=te
 adj_mtg30us <- felm(mtg30us~0|factor(zip_year)+factor(zip_orgyear),data=temp)
 temp['resid_mpay_value'] <- floor(adj_mpay_value$residuals*100000)/100
 temp['resid_mtg30us'] <- floor(adj_mtg30us$residuals*100)/100
-# temp$mtg30us <- floor(temp$mtg30us/0.001)/1000
-# temp <- temp[temp$mtg30us>6 & temp$mtg30us<=6.5,]
-
-temp_sum <- ddply(temp,.(resid_mtg30us),summarise,p50=quantile(resid_mpay_value,0.5,na.rm = TRUE),avg = mean(resid_mpay_value,na.rm = TRUE))
-
-ggplot(temp_sum, aes(x=resid_mtg30us, y=avg)) + geom_point(shape=1)+  geom_smooth(method=lm) + theme_bw()+ylab("FE adjusted median mortgage-to-value") + xlab("FE adjusted 30 year fixed rate mortgage rate")+ labs(title = "Panel A")
-
 
 temp <- temp[temp$resid_mpay_value <= quantile(temp$resid_mpay_value,0.95,na.rm = TRUE) & temp$resid_mpay_value >= quantile(temp$resid_mpay_value,0.05,na.rm = TRUE),]
 # temp$resid_mpay_value <- floor(temp$resid_mpay_value/5)*5/1e5
@@ -211,9 +205,36 @@ temp <- temp[temp$resid_mpay_value <= quantile(temp$resid_mpay_value,0.95,na.rm 
 adj_default <- felm(def~0|factor(zip_year)+factor(zip_orgyear),data=temp)
 temp['resid_default'] <- floor(adj_default$residuals*100)/100
 
-temp_sum <- ddply(temp,.(resid_mpay_value),summarise,def = mean(resid_default,na.rm = TRUE))
+temp <- temp[,c("resid_mtg30us","resid_mpay_value","resid_default")]
+temp <- temp[complete.cases(temp),]
 
-ggplot(temp_sum, aes(x=resid_mpay_value, y=def)) + geom_point(shape=1)+  geom_smooth(method=lm) + theme_bw()+ylab("FE adjusted Default %") + xlab("FE adjusted mortgage-to-value")+ labs(title = "Panel B")
+bw <- npregbw(formula=as.vector(temp$resid_default)~as.vector(temp$resid_mpay_value),bws=0.25,bwtype="fixed",bandwidth.compute=F)
+model <- npreg(bws=bw,gradients = TRUE)
+plot.out <- plot(model, plot.errors.method="asymptotic",plot.errors.style="band",plot.behavior="data")
+y.eval <- fitted(plot.out$r1)
+x.eval <- plot.out$r1$eval[,1]
+y.se <- se(plot.out$r1)
+y.lower.ci <- y.eval+1.96*y.se[,1]
+y.upper.ci <- y.eval+1.96*y.se[,2]
+df <- as.data.frame(cbind(x.eval,y.eval,y.lower.ci,y.upper.ci))
+df <- melt(df,id="x.eval")
+ggplot(df,aes(x=x.eval, y=value,colour=variable)) + geom_line(aes(linetype=variable), size=1) +scale_linetype_manual(values = c(1,2,2))+scale_colour_manual(values=c("black","gray40","gray40"))+ theme_bw()+ylab("FE adjusted default rate") + xlab("FE adjusted median mortgage-to-value")+ labs(title = "Panel A")+ theme(legend.position="none")
+
+```
+
+
+```{r}
+bw <- npregbw(formula=as.vector(temp$resid_mpay_value)~as.vector(temp$resid_mtg30us),bws=0.25,bwtype="fixed",bandwidth.compute=F)
+model <- npreg(bws=bw,gradients = TRUE)
+plot.out <- plot(model, plot.errors.method="asymptotic",plot.errors.style="band",plot.behavior="data")
+y.eval <- fitted(plot.out$r1)
+x.eval <- plot.out$r1$eval[,1]
+y.se <- se(plot.out$r1)
+y.lower.ci <- y.eval+1.96*y.se[,1]
+y.upper.ci <- y.eval+1.96*y.se[,2]
+df <- as.data.frame(cbind(x.eval,y.eval,y.lower.ci,y.upper.ci))
+df <- melt(df,id="x.eval")
+ggplot(df,aes(x=x.eval, y=value,colour=variable)) + geom_line(aes(linetype=variable), size=1) +scale_linetype_manual(values = c(1,2,2))+scale_colour_manual(values=c("black","gray40","gray40"))+ theme_bw()+ylab("FE adjusted median mortgage-to-value") + xlab("FE adjusted 30 year fixed rate mortgage rate")+ labs(title = "Panel B")+ theme(legend.position="none")
 
 ```
 
@@ -245,6 +266,49 @@ printtable(felm_regs,"","default",note,"mtg30us",list(condf))
 ```
 
 <a href="#top">Back to top</a>
+
+## Graphical Illustration
+```{r graphical_illustration}
+# ne_cuts <- c(-0.1,-0.3,-0.5)
+# formula_first_stage <- as.formula("mpay_value~mtg30us+fico+ltv+log(upb)+dti|factor(zip_year)+factor(org_year)|0|zip_year")
+# 
+# df_all <- NULL
+# for(cut in ne_cuts){
+#   print(cut)
+#   temp <- loan_data[loan_data$ne_cutoff %in% c(cut),]
+#   temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+# 
+# 
+#   first_stage <- felm(formula_first_stage, data=temp)
+#   temp['mpay_value_fit'] <- first_stage$fitted.values
+# 
+#   adj_mpay_value <- felm(mpay_value_fit~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+#   temp['resid_mpay_value_fit'] <- floor(adj_mpay_value$residuals*100000)/100
+#   adj_default <- felm(def~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+#   temp['resid_default'] <- floor(adj_default$residuals*100)/100
+# 
+# 
+#   bw <- npregbw(formula=as.vector(temp$resid_default)~as.vector(temp$resid_mpay_value_fit),bws=0.1,bwtype="fixed",bandwidth.compute=F)
+#   model <- npreg(bws=bw,gradients = TRUE)
+#   plot.out <- plot(model, plot.errors.method="asymptotic",plot.errors.style="band",plot.behavior="data")
+#   y.eval <- fitted(plot.out$r1)
+#   x.eval <- plot.out$r1$eval[,1]
+#   df <- as.data.frame(cbind(x.eval,y.eval))
+#   df['ne_cutoff'] <- cut
+#   df_all <- rbind(df_all,df)
+# }
+# 
+# saveRDS(df_all,file="kernal_regs.rds")
+
+df_all <- readRDS(file="kernal_regs.rds")
+
+df_all <- melt(df_all,id=c("x.eval","ne_cutoff"))
+df_all$ne_cutoff <- paste(df_all$ne_cutoff*100,"%")
+df_all <- df_all[df_all$x.eval>-0.5 & df_all$x.eval<0.5,]
+ggplot(df_all,aes(x=x.eval, y=value,colour=ne_cutoff)) + geom_line(aes(linetype=ne_cutoff), size=1) +scale_linetype_manual(values = c(1,2,3))+scale_colour_manual(values=c("black","gray60","gray30"))+ theme_bw()+ylab("FE adjusted default rate") + xlab("FE adjusted Mortgage-to-value(fit)")+ theme(legend.position="bottom",legend.title=element_blank())
+
+```
+
 
 # Control Variables
 ```{r othervariables}
