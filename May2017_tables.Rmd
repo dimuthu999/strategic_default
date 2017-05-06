@@ -191,50 +191,63 @@ printtable(iv_reg_1st,"","mpay value",note,"none","")
 
 ```{r figure}
 library(np)
-temp <- loan_data[loan_data$ne_cutoff == -0.3,]
-temp <- completeFun(temp,c("mtg30us","mpay_value","zip_year","zip_orgyear"))
+# temp <- loan_data[loan_data$ne_cutoff == -0.3,]
+# temp <- completeFun(temp,c("mtg30us","mpay_value","zip_year","zip_orgyear"))
+# 
+# adj_mpay_value <- felm(mpay_value~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+# adj_mtg30us <- felm(mtg30us~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+# temp['resid_mpay_value'] <- adj_mpay_value$residuals*10000#floor(adj_mpay_value$residuals*100000)/100
+# temp['resid_mtg30us'] <- adj_mtg30us$residuals*100#floor(adj_mtg30us$residuals*100)/100
+# 
+# temp <- temp[temp$resid_mpay_value <= quantile(temp$resid_mpay_value,0.95,na.rm = TRUE) & temp$resid_mpay_value >= quantile(temp$resid_mpay_value,0.05,na.rm = TRUE),]
+# # temp$resid_mpay_value <- floor(temp$resid_mpay_value/5)*5/1e5
+# 
+# adj_default <- felm(def~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+# temp['resid_default'] <- adj_default$residuals#  floor(adj_default$residuals*100)/100
+# 
+# temp <- temp[,c("resid_mtg30us","resid_mpay_value","resid_default")]
+# temp <- temp[complete.cases(temp),]
+# 
+# bw <- npregbw(formula=as.vector(temp$resid_default)~as.vector(temp$resid_mpay_value),bws=0.75,bwtype="fixed",bandwidth.compute=F)
+# model <- npreg(bws=bw,gradients = TRUE)
+# plot.out <- plot(model, plot.errors.method="asymptotic",plot.errors.style="band",plot.behavior="data")
+# y.eval <- fitted(plot.out$r1)
+# x.eval <- plot.out$r1$eval[,1]/10000+mean(loan_data[loan_data$ne_cutoff==-0.3,]$mpay_value,na.rm=TRUE)
+# y.se <- se(plot.out$r1)
+# y.lower.ci <- y.eval+1.96*y.se[,1]
+# y.upper.ci <- y.eval+1.96*y.se[,2]
+# df <- as.data.frame(cbind(x.eval,y.eval,y.lower.ci,y.upper.ci))
+# saveRDS(df,file="figure_panelA.rds")
 
-adj_mpay_value <- felm(mpay_value~0|factor(zip_year)+factor(zip_orgyear),data=temp)
-adj_mtg30us <- felm(mtg30us~0|factor(zip_year)+factor(zip_orgyear),data=temp)
-temp['resid_mpay_value'] <- floor(adj_mpay_value$residuals*100000)/100
-temp['resid_mtg30us'] <- floor(adj_mtg30us$residuals*100)/100
-
-temp <- temp[temp$resid_mpay_value <= quantile(temp$resid_mpay_value,0.95,na.rm = TRUE) & temp$resid_mpay_value >= quantile(temp$resid_mpay_value,0.05,na.rm = TRUE),]
-# temp$resid_mpay_value <- floor(temp$resid_mpay_value/5)*5/1e5
-
-adj_default <- felm(def~0|factor(zip_year)+factor(zip_orgyear),data=temp)
-temp['resid_default'] <- floor(adj_default$residuals*100)/100
-
-temp <- temp[,c("resid_mtg30us","resid_mpay_value","resid_default")]
-temp <- temp[complete.cases(temp),]
-
-bw <- npregbw(formula=as.vector(temp$resid_default)~as.vector(temp$resid_mpay_value),bws=0.25,bwtype="fixed",bandwidth.compute=F)
-model <- npreg(bws=bw,gradients = TRUE)
-plot.out <- plot(model, plot.errors.method="asymptotic",plot.errors.style="band",plot.behavior="data")
-y.eval <- fitted(plot.out$r1)
-x.eval <- plot.out$r1$eval[,1]
-y.se <- se(plot.out$r1)
-y.lower.ci <- y.eval+1.96*y.se[,1]
-y.upper.ci <- y.eval+1.96*y.se[,2]
-df <- as.data.frame(cbind(x.eval,y.eval,y.lower.ci,y.upper.ci))
+df <- readRDS(file="figure_panelA.rds")
+df$y.eval = df$y.eval+ mean(loan_data[loan_data$ne_cutoff==-0.3,]$def,na.rm=TRUE)
+df$y.lower.ci = df$y.lower.ci+ mean(loan_data[loan_data$ne_cutoff==-0.3,]$def,na.rm=TRUE)
+df$y.upper.ci = df$y.upper.ci+ mean(loan_data[loan_data$ne_cutoff==-0.3,]$def,na.rm=TRUE)
 df <- melt(df,id="x.eval")
-ggplot(df,aes(x=x.eval, y=value,colour=variable)) + geom_line(aes(linetype=variable), size=1) +scale_linetype_manual(values = c(1,2,2))+scale_colour_manual(values=c("black","gray40","gray40"))+ theme_bw()+ylab("FE adjusted default rate") + xlab("FE adjusted median mortgage-to-value")+ labs(title = "Panel A")+ theme(legend.position="none")
-
+df <- df[df$x.eval>0.008 & df$x.eval<0.009,]
+g1 <-  ggplot(df,aes(x=x.eval, y=value,colour=variable)) + geom_line(aes(linetype=variable), size=1) +scale_linetype_manual(values = c(1,2,2))+scale_colour_manual(values=c("black","gray40","gray40"))+ theme_bw()+ylab("FE adjusted default rate") + xlab("FE adjusted median mortgage-to-value")+ labs(title = "Panel A")+ theme(legend.position="none")
+g1
 ```
 
 
 ```{r}
-bw <- npregbw(formula=as.vector(temp$resid_mpay_value)~as.vector(temp$resid_mtg30us),bws=0.25,bwtype="fixed",bandwidth.compute=F)
-model <- npreg(bws=bw,gradients = TRUE)
-plot.out <- plot(model, plot.errors.method="asymptotic",plot.errors.style="band",plot.behavior="data")
-y.eval <- fitted(plot.out$r1)
-x.eval <- plot.out$r1$eval[,1]
-y.se <- se(plot.out$r1)
-y.lower.ci <- y.eval+1.96*y.se[,1]
-y.upper.ci <- y.eval+1.96*y.se[,2]
-df <- as.data.frame(cbind(x.eval,y.eval,y.lower.ci,y.upper.ci))
+# bw <- npregbw(formula=as.vector(temp$resid_mpay_value)~as.vector(temp$resid_mtg30us),bws=2,bwtype="fixed",bandwidth.compute=F)
+# model <- npreg(bws=bw,gradients = TRUE)
+# plot.out <- plot(model, plot.errors.method="asymptotic",plot.errors.style="band",plot.behavior="data")
+# y.eval <- fitted(plot.out$r1)/10000+mean(loan_data[loan_data$ne_cutoff==-0.3,]$mpay_value,na.rm=TRUE)
+# x.eval <- plot.out$r1$eval[,1]/100+mean(loan_data[loan_data$ne_cutoff==-0.3,]$mtg30us,na.rm=TRUE)
+# y.se <- se(plot.out$r1)/10000
+# y.lower.ci <- y.eval+1.96*y.se[,1]
+# y.upper.ci <- y.eval+1.96*y.se[,2]
+# df <- as.data.frame(cbind(x.eval,y.eval,y.lower.ci,y.upper.ci))
+# saveRDS(df,file="figure_panelB.rds")
+
+df <- readRDS(file="figure_panelB.rds")
 df <- melt(df,id="x.eval")
-ggplot(df,aes(x=x.eval, y=value,colour=variable)) + geom_line(aes(linetype=variable), size=1) +scale_linetype_manual(values = c(1,2,2))+scale_colour_manual(values=c("black","gray40","gray40"))+ theme_bw()+ylab("FE adjusted median mortgage-to-value") + xlab("FE adjusted 30 year fixed rate mortgage rate")+ labs(title = "Panel B")+ theme(legend.position="none")
+df <- df[df$value>quantile(df$value,0.03,na.rm=TRUE) & df$value <quantile(df$value,0.97,na.rm=TRUE),]
+df <- df[df$x.eval>5.75 & df$x.eval<6.8,]
+g2 <- ggplot(df,aes(x=x.eval, y=value,colour=variable)) + geom_line(aes(linetype=variable), size=1) +scale_linetype_manual(values = c(1,2,2))+scale_colour_manual(values=c("black","gray40","gray40"))+ theme_bw()+ylab("FE adjusted median mortgage-to-value") + xlab("FE adjusted 30 year fixed rate mortgage rate")+ labs(title = "Panel B")+ theme(legend.position="none")
+g2
 
 ```
 
@@ -268,9 +281,8 @@ printtable(felm_regs,"","default",note,"mtg30us",list(condf))
 <a href="#top">Back to top</a>
 
 ## Graphical Illustration
-```{r graphical_illustration}
+```{r graphical_illustration_ne}
 # ne_cuts <- c(-0.1,-0.3,-0.5)
-# formula_first_stage <- as.formula("mpay_value~mtg30us+fico+ltv+log(upb)+dti|factor(zip_year)+factor(org_year)|0|zip_year")
 # 
 # df_all <- NULL
 # for(cut in ne_cuts){
@@ -283,12 +295,12 @@ printtable(felm_regs,"","default",note,"mtg30us",list(condf))
 #   temp['mpay_value_fit'] <- first_stage$fitted.values
 # 
 #   adj_mpay_value <- felm(mpay_value_fit~0|factor(zip_year)+factor(zip_orgyear),data=temp)
-#   temp['resid_mpay_value_fit'] <- floor(adj_mpay_value$residuals*100000)/100
+#   temp['resid_mpay_value_fit'] <- adj_mpay_value$residuals*10000
 #   adj_default <- felm(def~0|factor(zip_year)+factor(zip_orgyear),data=temp)
-#   temp['resid_default'] <- floor(adj_default$residuals*100)/100
+#   temp['resid_default'] <- adj_default$residuals
 # 
 # 
-#   bw <- npregbw(formula=as.vector(temp$resid_default)~as.vector(temp$resid_mpay_value_fit),bws=0.1,bwtype="fixed",bandwidth.compute=F)
+#   bw <- npregbw(formula=as.vector(temp$resid_default)~as.vector(temp$resid_mpay_value_fit),bws=0.75,bwtype="fixed",bandwidth.compute=F)
 #   model <- npreg(bws=bw,gradients = TRUE)
 #   plot.out <- plot(model, plot.errors.method="asymptotic",plot.errors.style="band",plot.behavior="data")
 #   y.eval <- fitted(plot.out$r1)
@@ -298,17 +310,70 @@ printtable(felm_regs,"","default",note,"mtg30us",list(condf))
 #   df_all <- rbind(df_all,df)
 # }
 # 
-# saveRDS(df_all,file="kernal_regs.rds")
+# saveRDS(df_all,file="kernal_regs_2.rds")
 
-df_all <- readRDS(file="kernal_regs.rds")
-
+df_all <- readRDS(file="kernal_regs_2.rds")
+df_all$y.eval <- ifelse(df_all$ne_cutoff==-0.1,df_all$y.eval + mean(loan_data[loan_data$ne_cutoff==-0.1,]$def,na.rm=TRUE),ifelse(df_all$ne_cutoff==-0.3,df_all$y.eval + mean(loan_data[loan_data$ne_cutoff==-0.3,]$def,na.rm=TRUE),df_all$y.eval + mean(loan_data[loan_data$ne_cutoff==-0.5,]$def,na.rm=TRUE)))
+df_all$x.eval <- df_all$x.eval/10000+mean(loan_data[loan_data$ne_cutoff==-0.3,]$mpay_value,na.rm=TRUE)
+# df_all$x.eval <- ifelse(df_all$ne_cutoff==-0.1,df_all$x.eval + mean(loan_data[loan_data$ne_cutoff==-0.1,]$mpay_value,na.rm=TRUE),ifelse(df_all$ne_cutoff==-0.3,df_all$x.eval + mean(loan_data[loan_data$ne_cutoff==-0.3,]$mpay_value,na.rm=TRUE),df_all$x.eval + mean(loan_data[loan_data$ne_cutoff==-0.5,]$mpay_value,na.rm=TRUE)))
 df_all <- melt(df_all,id=c("x.eval","ne_cutoff"))
 df_all$ne_cutoff <- paste(df_all$ne_cutoff*100,"%")
-df_all <- df_all[df_all$x.eval>-0.5 & df_all$x.eval<0.5,]
-ggplot(df_all,aes(x=x.eval, y=value,colour=ne_cutoff)) + geom_line(aes(linetype=ne_cutoff), size=1) +scale_linetype_manual(values = c(1,2,3))+scale_colour_manual(values=c("black","gray60","gray30"))+ theme_bw()+ylab("FE adjusted default rate") + xlab("FE adjusted Mortgage-to-value(fit)")+ theme(legend.position="bottom",legend.title=element_blank())
+df_all <- df_all[df_all$x.eval>0.008 & df_all$x.eval<0.009,]
+# ggplot(df_all,aes(x=x.eval, y=value,colour=ne_cutoff)) + geom_line(aes(linetype=ne_cutoff), size=1) +scale_linetype_manual(values = c(1,2,3))+scale_colour_manual(values=c("black","gray60","gray30"))+ theme_bw()+ylab("FE adjusted default rate") + xlab("FE adjusted Mortgage-to-value(fit)")+ theme(legend.position="bottom",legend.title=element_blank())
 
 ```
 
+
+```{r graphical_illustration_pe}
+
+loan_data_pe <- readRDS(file="loan_data_pos_eqty_Apr262017.rds")
+
+# ne_cuts <- c(0.1,0.3,0.5)
+# 
+# df_all <- NULL
+# for(cut in ne_cuts){
+#   print(cut)
+#   temp <- loan_data_pe[loan_data_pe$ne_cutoff %in% c(cut),]
+#   temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+# 
+# 
+#   first_stage <- felm(formula_first_stage, data=temp)
+#   temp['mpay_value_fit'] <- first_stage$fitted.values
+# 
+#   adj_mpay_value <- felm(mpay_value_fit~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+#   temp['resid_mpay_value_fit'] <- adj_mpay_value$residuals*10000
+#   adj_default <- felm(def~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+#   temp['resid_default'] <- adj_default$residuals
+# 
+# 
+#   bw <- npregbw(formula=as.vector(temp$resid_default)~as.vector(temp$resid_mpay_value_fit),bws=0.75,bwtype="fixed",bandwidth.compute=F)
+#   model <- npreg(bws=bw,gradients = TRUE)
+#   plot.out <- plot(model, plot.errors.method="asymptotic",plot.errors.style="band",plot.behavior="data")
+#   y.eval <- fitted(plot.out$r1)
+#   x.eval <- plot.out$r1$eval[,1]
+#   df <- as.data.frame(cbind(x.eval,y.eval))
+#   df['ne_cutoff'] <- cut
+#   df_all <- rbind(df_all,df)
+# }
+# 
+# saveRDS(df_all,file="kernal_regs_pe.rds")
+
+df_all2 <- readRDS(file="kernal_regs_pe.rds")
+df_all2$y.eval <- ifelse(df_all2$ne_cutoff==0.1,df_all2$y.eval + mean(loan_data_pe[loan_data_pe$ne_cutoff==0.1,]$def,na.rm=TRUE),ifelse(df_all2$ne_cutoff==0.3,df_all2$y.eval + mean(loan_data_pe[loan_data_pe$ne_cutoff==0.3,]$def,na.rm=TRUE),df_all2$y.eval + mean(loan_data_pe[loan_data_pe$ne_cutoff==0.5,]$def,na.rm=TRUE)))
+df_all2$x.eval <- df_all2$x.eval/10000+mean(loan_data[loan_data$ne_cutoff==-0.3,]$mpay_value,na.rm=TRUE)
+# df_all$x.eval <- ifelse(df_all$ne_cutoff==-0.1,df_all$x.eval + mean(loan_data[loan_data$ne_cutoff==-0.1,]$mpay_value,na.rm=TRUE),ifelse(df_all$ne_cutoff==-0.3,df_all$x.eval + mean(loan_data[loan_data$ne_cutoff==-0.3,]$mpay_value,na.rm=TRUE),df_all$x.eval + mean(loan_data[loan_data$ne_cutoff==-0.5,]$mpay_value,na.rm=TRUE)))
+df_all2 <- melt(df_all2,id=c("x.eval","ne_cutoff"))
+df_all2$ne_cutoff <- paste("+",df_all2$ne_cutoff*100,"%")
+df_all2 <- df_all2[df_all2$x.eval>0.008 & df_all2$x.eval<0.009,]
+# ggplot(df_all2,aes(x=x.eval, y=value,colour=ne_cutoff)) + geom_line(aes(linetype=ne_cutoff), size=1) +scale_linetype_manual(values = c(1,2,3))+scale_colour_manual(values=c("black","gray60","gray30"))+ theme_bw()+ylab("FE adjusted default rate") + xlab("FE adjusted Mortgage-to-value(fit)")+ theme(legend.position="bottom",legend.title=element_blank())
+
+
+```
+
+```{r}
+df_comb <- rbind(df_all,df_all2)
+ggplot(df_comb,aes(x=x.eval, y=value,colour=ne_cutoff)) + geom_line(aes(linetype=ne_cutoff),size=0.75) +scale_linetype_manual(values = c(1,5,6,3,2,4))+scale_colour_manual(values=c("black","black","black","gray50","gray50","gray50"))+ theme_bw()+ylab("FE adjusted default rate") + xlab("FE adjusted Mortgage-to-value(fit)")+ theme(legend.position="bottom",legend.title=element_blank(),legend.box = "horizontal")
+```
 
 # Control Variables
 ```{r othervariables}
