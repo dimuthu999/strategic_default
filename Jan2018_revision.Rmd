@@ -1,0 +1,768 @@
+---
+title: "Interest Rate and Default"
+output: 
+  html_document: 
+    css: bodycss.css
+    fig_height: 6
+    fig_width: 12
+    toc: yes
+    number_section: yes
+---
+
+<style type="text/css">
+body{ 
+      font-size: 15px;
+      font-family: Helvetica,Arial,sans-serif;
+      line-height: 200%;
+  }
+  
+.author {
+ font-size: 15px;
+ color: Black;
+ font-style: normal;
+ text-align: center;
+}
+
+
+.date { 
+ font-size: 15px;
+ color: Black;
+ font-style: normal;
+ text-align: center;
+}
+
+.title{
+  text-align: center;
+  font-size: 15px;
+ color: Black;
+ 
+}
+
+.toc-ignore{
+  text-align: center;
+  font-size: 15px;
+ color: Black;
+}
+
+.fluid-row{
+  text-align: center;
+  font-size: 15px;
+ color: Black;
+}
+
+</style>
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE,echo=FALSE)
+```
+
+```{r echo=FALSE}
+rm(list=ls())
+library(data.table)
+library(zoo)
+library(sqldf)
+library(stargazer)
+library(survival)
+library(reshape2)
+library(zipcode)
+library(ggplot2)
+library(multiwayvcov)
+library(sandwich)
+library(Matching)
+library(AER)
+library(FinCal)
+library(ggplot2)
+library(reshape2)
+library(scales)
+library(pracma)
+library(plyr)
+library(lfe)
+library(dplyr)
+library(np)
+library(DataCombine)
+file_path = "E:/strategic_default"
+setwd(file_path)
+
+
+output.type = "text"
+
+completeFun <- function(data, desiredCols) {
+  completeVec <- complete.cases(data[, desiredCols])
+  return(data[completeVec, ])
+}
+
+
+# mtgrates <- read.csv(file="MORTGAGE30US.csv")
+# mtgrates$date <- as.Date(mtgrates$date,origin="1900-01-01")
+# mtgrates$date <- as.Date(paste(substr(as.character(mtgrates$date),1,7),"-01",sep=""))
+# mtgrates <- ddply(mtgrates,.(date),summarise,mtg30us=median(mtg30us,na.rm = TRUE))
+# 
+# tbondrates <- read.csv(file="GS10.csv",stringsAsFactors = FALSE)
+# tbondrates$month <- as.Date(tbondrates$month)
+# 
+# rent <- read.csv("Zip_MedianRentalPrice_Sfr.csv")
+# rent <- data.frame(rent[1], stack(rent[7:ncol(rent)]))
+# rent$ind <- as.character(rent$ind)
+# rent['month']<- as.Date(paste(substr(rent$ind,2,5),substr(rent$ind,7,8),"01",sep = "-"))
+# rent$ind <- NULL
+# names(rent)<-c("zip","rent","month")
+# rent['zip']<-(rent$zip %/% 100)*100
+# rent <- rent[rent$month>='2011-01-01' & rent$month<'2012-01-01',]
+# rent <- ddply(rent,.(zip),summarise,rent=median(rent,na.rm = TRUE))
+# 
+# hpi <- read.csv("Zip_Zhvi_SingleFamilyResidence.csv")
+# hpi <- data.frame(hpi[2], stack(hpi[8:ncol(hpi)]))
+# names(hpi)<-c("zip","value","month")
+# hpi$zip <- floor(hpi$zip/100)*100
+# hpi$month <- as.Date(paste(substr(hpi$month,2,5),substr(hpi$month,7,8),"01",sep = "-"))
+# hpi$value <- as.double(hpi$value)
+# hpi <- hpi[hpi$month>='2011-01-01' & hpi$month<'2012-01-01',]
+# hpi <- hpi[hpi$zip %in% unique(rent$zip),]
+# hpi <- ddply(hpi,.(zip),summarise,value=median(value,na.rm = TRUE))
+# 
+# rent <- merge(rent,hpi,by="zip")
+# rent <- na.omit(rent)
+# rent['rent_value'] <- rent$rent/rent$value
+# rent['rent_quartiles'] <- ntile(rent$rent,4)
+# rent['rent_value_quartiles'] <- ntile(rent$rent_value,4)
+# rent <- na.omit(rent)
+# rent$rent <- NULL
+# rent$value <- NULL
+# 
+# 
+# rent_ts <- read.csv("Zip_MedianRentalPrice_Sfr.csv")
+# rent_ts <- data.frame(rent_ts[1], stack(rent_ts[7:ncol(rent_ts)]))
+# rent_ts$ind <- as.character(rent_ts$ind)
+# rent_ts['month']<- as.Date(paste(substr(rent_ts$ind,2,5),substr(rent_ts$ind,7,8),"01",sep = "-"))
+# rent_ts$ind <- NULL
+# names(rent_ts)<-c("zip","rent","month")
+# rent_ts['zip']<-(rent_ts$zip %/% 100)*100
+# rent_ts <- rent_ts[complete.cases(rent_ts),]
+# rent_ts <- ddply(rent_ts,.(month,zip),summarise,rent=median(rent,na.rm = TRUE))
+# 
+# hpi <- read.csv("Zip_Zhvi_SingleFamilyResidence.csv")
+# hpi <- data.frame(hpi[2], stack(hpi[8:ncol(hpi)]))
+# names(hpi)<-c("zip","value","month")
+# hpi$zip <- floor(hpi$zip/100)*100
+# hpi$month <- as.Date(paste(substr(hpi$month,2,5),substr(hpi$month,7,8),"01",sep = "-"))
+# hpi$value <- as.double(hpi$value)
+# hpi <- hpi[hpi$zip %in% unique(rent_ts$zip),]
+# hpi <- ddply(hpi,.(month,zip),summarise,value=median(value,na.rm = TRUE))
+# 
+# rent_ts <- merge(rent_ts,hpi,by=c("zip","month"))
+# rent_ts['rent_value_ts'] <- rent_ts$rent/rent_ts$value
+# temp <- ddply(rent_ts,.(zip),summarize,rent_value_ts_med = median(rent_value_ts,na.rm = TRUE))
+# rent_ts <- merge(rent_ts,temp,by="zip")
+# rent_ts['rent_value_ts_ntile']<-ntile(rent_ts$rent_value_ts_med,10)
+# rent_ts$rent <- NULL
+# rent_ts$value <- NULL
+# 
+# forc_delay <- readRDS(file="foreclosure_months_summary.rds")
+# forc_delay <- as.data.frame(forc_delay)
+# forc_delay$current_year <- forc_delay$current_year+1
+# forc_delay['forc_time_qt'] <- ntile(forc_delay$months_in_foreclosure,4)
+# ###########################################################
+# # loan_data
+# file_names <- c("cox_ne_-0.1new_Apr282017_60day.rds","cox_ne_-0.2new_Apr282017_60day.rds","cox_ne_-0.3_Apr282017_60day.rds","cox_ne_-0.4_Apr282017_60day.rds","cox_ne_-0.5_Apr282017_60day.rds")
+# #
+# loan_data <- NULL
+# 
+# for(fn in file_names){
+#   print(fn)
+#   temp <- readRDS(file=fn)
+# 
+#   temp <- temp[!duplicated(temp[,c("loanid")]),]
+# 
+#   temp <- merge(temp,mtgrates,by.x=c("orgdate"),by.y = c("date"))
+#   temp <- merge(temp,tbondrates,by.x=c("orgdate"),by.y = c("month"))
+#   temp['mpay_value'] <- temp$mpay/temp$current_housevalue
+#   temp['interest_diff'] <- temp$interestrate - temp$mtg30us
+#   temp['ne_year'] <- as.numeric(format(as.Date(as.character(temp$current_date)),"%Y"))
+#   temp['zip_year'] <- paste(temp$zip,temp$ne_year,sep="_")
+#   temp['org_year'] <- as.numeric(format(temp$orgdate,"%Y"))
+#   if(median(temp$ne_cutoff,na.rm = TRUE)==-0.5)  temp$ org_year <- ifelse(temp$org_year<=2007 & temp$org_year>=2004,2005,ifelse(temp$org_year<=2011 & temp$org_year>=2008,2010,ifelse(temp$org_year<=2003,2000,2013)))
+#   temp['zip_orgyear'] <- paste(temp$zip,temp$org_year,sep="_")
+# 
+# 
+#   temp <- merge(temp,rent,by=c("zip"),all.x = TRUE)
+#   temp <- merge(temp,rent_ts,by.x =c("zip","current_date"),by.y=c("zip","month"),all.x = TRUE)
+#   temp <- merge(temp,forc_delay,by.x=c("zip","ne_year"),by.y = c("zip","current_year"),all.x = TRUE)
+# 
+#   loan_data = rbind(loan_data,temp)
+# }
+# 
+# property_tax <- readRDS("prop_tax.rds")
+# 
+# loan_data <- merge(loan_data,property_tax,by="zip",all.x = TRUE)
+# loan_data['prop_tax_value'] <- (loan_data$current_housevalue*loan_data$prop_tax_pct)/12
+# loan_data$mpay <- loan_data$mpay+loan_data$prop_tax_value*0.8+loan_data$upb*(100/loan_data$ltv)*0.01/12-loan_data$currentupb_t*loan_data$interestrate*0.2/1200
+# 
+# # adjusted for property taxes, maintainance costs and tax benefit on interest
+# loan_data['mpay_value_2'] <- loan_data$mpay/loan_data$current_housevalue
+# 
+# saveRDS(loan_data,file="loan_data_May72017.rds")
+
+loan_data <- readRDS(file="loan_data_May72017.rds")
+
+loan_data['fico_cat'] <- ntile(loan_data$fico,4)
+
+loan_data_pe <- readRDS(file="loan_data_pos_eqty_Jun082017_fromabove.rds")
+loan_data_pe <- rbind(loan_data_pe,readRDS(file="loan_data_pos_eqty_Jun072017_152025.rds"))
+
+cluster_by = "zip_year"
+
+note =c("Fixed Effects: zip x ne year, zip x org year","Standard Errors clustered by zip x ne year")
+printtable <- function(reg,column.labels,depvar,note,iv,lines) {
+  stargazer(reg,type=output.type,no.space = TRUE,omit.stat = c("f","rsq","ser"),notes= note,column.labels = column.labels, dep.var.labels = "",dep.var.caption   = paste("Y: ",gsub("_"," ",depvar),"; iv: ",gsub("_"," ",iv)),dep.var.labels.include = FALSE,add.lines = lines)
+}
+
+
+loan_data$mpay_value = loan_data$interestrate
+loan_data_pe$mpay_value = loan_data_pe$interestrate
+
+
+```
+
+
+# Tables
+
+Panel A provides descriptive statistics of the 30% negative equity sample. Panel B provides descriptive statistics of 30% positive equity sample.
+
+## Descriptives, 30% Negative Equity
+```{r ne30_desc}
+
+stargazer(loan_data[loan_data$ne_cutoff==-0.3, c("def","prepaid","interestrate","mtg30us","fico","mpay","ltv","dti","upb","interestrate","org_year","ne_year")], type = output.type, summary.stat = c("mean", "sd", "p25", "median", "p75", "n"),notes = "",digits = 5)
+```
+
+<a href="#top">Back to top</a>
+
+## Descriptives, 30% Positive Equity
+```{r pe30_desc}
+
+temp <- loan_data_pe[loan_data_pe$ne_cutoff %in% c(0.3),]
+temp <- completeFun(temp,c("def","mpay_value","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+stargazer(temp[, c("def","prepaid","interestrate","mtg30us","fico","mpay","ltv","dti","upb","interestrate","org_year","ne_year")], type = output.type, summary.stat = c("mean", "sd", "p25", "median", "p75", "n"),notes = "",digits = 5)
+```
+
+<a href="#top">Back to top</a>
+
+## Negative Equity sample summary
+```{r sample_summary_1}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5),]
+sample_sum <- ddply(temp,.(ne_cutoff),summarise,interestrate=mean(interestrate,na.rm=TRUE),default_rate = mean(def,na.rm=TRUE)*100,prepayment_rate = mean(prepaid,na.rm=TRUE)*100)
+stargazer(sample_sum,summary = FALSE,type=output.type,notes="In percent")
+
+```
+
+<a href="#top">Back to top</a>
+
+## Positive Equity sample summary
+```{r sample_summary}
+temp <- loan_data_pe[loan_data_pe$ne_cutoff %in% c(0,0.1,0.2,0.3,0.5),]
+sample_sum <- ddply(temp,.(ne_cutoff),summarise,interestrate=mean(interestrate,na.rm=TRUE),default_rate = mean(def,na.rm=TRUE)*100,prepayment_rate = mean(prepaid,na.rm=TRUE)*100)
+stargazer(sample_sum,summary = FALSE,type=output.type,notes="In percent")
+
+```
+
+
+
+
+<a href="#top">Back to top</a>
+
+<hr/>
+
+
+## Default OLS
+
+This table provides OLS estimates of the relationship between default and interest rate for each negative equity sample. $Default$ equals 1 if the mortgage becomes 60 days delinquent after reaching the respective negative equity threshold. 
+```{r ne_ols}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5),]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti+interestrate|factor(zip_year)+factor(zip_orgyear)|0|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
+
+printtable(felm_regs,"","default",note,"none","")
+
+```
+
+<a href="#top">Back to top</a>
+
+
+## Negative Equity, First Stage, Benchmark Rate as Instrument
+```{r ne_firststage}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5),]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+formula <- as.formula("interestrate~mtg30us+fico+ltv+log(upb)+dti|factor(zip_year)+factor(org_year)|0|zip_year")
+
+iv_reg_1st <- list()
+iv_reg_1st[[1]] <- felm(formula, data=temp[temp$ne_cutoff==-0.1,])
+iv_reg_1st[[2]] <- felm(formula, data=temp[temp$ne_cutoff==-0.2,])
+iv_reg_1st[[3]] <- felm(formula, data=temp[temp$ne_cutoff==-0.3,])
+iv_reg_1st[[4]] <- felm(formula, data=temp[temp$ne_cutoff==-0.4,])
+iv_reg_1st[[5]] <- felm(formula, data=temp[temp$ne_cutoff==-0.5,])
+
+printtable(iv_reg_1st,"","mpay value",note,"none","")
+```
+
+<a href="#top">Back to top</a>
+
+## Negative Equity, First Stage, 10 Year T-bond rate as Instrument
+```{r ne_firststage_gs10}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5),]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+formula <- as.formula("interestrate~gs10+fico+ltv+log(upb)+dti|factor(zip_year)+factor(org_year)|0|zip_year")
+
+iv_reg_1st <- list()
+iv_reg_1st[[1]] <- felm(formula, data=temp[temp$ne_cutoff==-0.1,])
+iv_reg_1st[[2]] <- felm(formula, data=temp[temp$ne_cutoff==-0.2,])
+iv_reg_1st[[3]] <- felm(formula, data=temp[temp$ne_cutoff==-0.3,])
+iv_reg_1st[[4]] <- felm(formula, data=temp[temp$ne_cutoff==-0.4,])
+iv_reg_1st[[5]] <- felm(formula, data=temp[temp$ne_cutoff==-0.5,])
+
+printtable(iv_reg_1st,"","mpay value",note,"none","")
+```
+
+<a href="#top">Back to top</a>
+
+## Negative Equity, Default IV Regressions, Benchmark Rate as Instrument
+
+```{r ne_iv}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
+
+condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,"","default",note,"mtg30us",list(condf))
+
+```
+
+<a href="#top">Back to top</a>
+
+## Negative Equity, Default IV Regressions, 10 Year T-bond rate as Instrument
+
+```{r ne_iv_gs10}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","gs10"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~gs10)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
+
+condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,"","default",note,"mtg30us",list(condf))
+
+```
+
+<a href="#top">Back to top</a>
+
+## Positive Equity, Default IV Regressions, Benchmark Rate as Instrument
+```{r pos_equity_def}
+temp <- loan_data_pe[loan_data_pe$ne_cutoff %in% c(0,0.1,0.15,0.2,0.25,0.3,0.5),]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==0 & is.finite(log(temp$upb)),])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==0.1 & is.finite(log(temp$upb)),])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==0.15 & is.finite(log(temp$upb)),])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==0.2 & is.finite(log(temp$upb)),])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==0.25 & is.finite(log(temp$upb)),])
+felm_regs[[6]] <- felm(formula,data=temp[temp$ne_cutoff==0.3 & is.finite(log(temp$upb)),])
+felm_regs[[7]] <- felm(formula,data=temp[temp$ne_cutoff==0.5 & is.finite(log(temp$upb)),])
+
+
+# condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2))#,round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,c("0","10","15","20","25","30","50"),"default",note,"mtg30us",list(""))
+```
+
+## Control Variables, Benchmark Rate as Instrument
+```{r othervariables}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3),]
+temp$zip_orgyear <- paste(temp$zip,temp$org_year)
+temp['std_mpay_value'] <- (temp$mpay_value - mean(temp$mpay_value,na.rm=TRUE))/sd(temp$mpay_value,na.rm=TRUE)
+
+
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","current_housevalue","interest_diff","zip_year","zip_orgyear","mtg30us","age_t"))
+
+formula_text <- "~0|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year"
+
+variables <- c("ltv","log(upb)","fico","dti")
+i = 1
+felm_regs <- list()
+for(variable in variables) {
+  # print(i)
+  felm_regs[[i]] <- felm(as.formula(paste(variable,formula_text,sep="")),data=temp)
+  i=i+1
+}
+
+stargazer(felm_regs,type = output.type,no.space = TRUE,column.labels = gsub("_","",variables),notes = note)
+```
+
+<a href="#top">Back to top</a>
+
+## Control Variables, 10-year T-bond Rate as Instrument
+```{r othervariables_gs10}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3),]
+temp$zip_orgyear <- paste(temp$zip,temp$org_year)
+temp['std_mpay_value'] <- (temp$mpay_value - mean(temp$mpay_value,na.rm=TRUE))/sd(temp$mpay_value,na.rm=TRUE)
+
+
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","current_housevalue","interest_diff","zip_year","zip_orgyear","gs10","age_t"))
+
+formula_text <- "~0|factor(zip_year)+factor(zip_orgyear)|(interestrate~gs10)|zip_year"
+
+variables <- c("ltv","log(upb)","fico","dti")
+i = 1
+felm_regs <- list()
+for(variable in variables) {
+  # print(i)
+  felm_regs[[i]] <- felm(as.formula(paste(variable,formula_text,sep="")),data=temp)
+  i=i+1
+}
+
+stargazer(felm_regs,type = output.type,no.space = TRUE,column.labels = gsub("_","",variables),notes = note)
+```
+<a href="#top">Back to top</a>
+
+
+## Split by FICO (30% NE Sample), Benchmark Rate as Instrument
+```{r fico_split}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.2) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$fico_cat==1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$fico_cat==2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$fico_cat==3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$fico_cat==4,])
+
+
+printtable(felm_regs,c("Q1 - 662","Q2 - 712","Q3 - 752","Q4 - 787"),"default",note,"mtg30us",list(""))
+
+```
+
+<a href="#top">Back to top</a>
+
+## Split by FICO (30% NE Sample), 10-year T-bond Rate as Instrument
+```{r fico_split_gs10}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.2) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","gs10"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~gs10)")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$fico_cat==1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$fico_cat==2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$fico_cat==3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$fico_cat==4,])
+
+
+printtable(felm_regs,c("Q1 - 662","Q2 - 712","Q3 - 752","Q4 - 787"),"default",note,"mtg30us",list(""))
+
+```
+
+<a href="#top">Back to top</a>
+
+## Judicial, Recourse States (30% Negative Equity), Benchmark Rate as Instrument
+
+```{r judicial_recourse}
+temp <- loan_data[loan_data$ne_cutoff==-0.3 ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+judicial=c('CT','DE','FL','IL','IN','IA','KS','KY','LA','MA','MD','ME','NJ','NM','NY','ND','OH','OK','PA','SC','SD','VT','WI')
+nonrecourse=c('AK','AZ','CA','IA','MN','MT','NC','ND','OR','WA','WI')
+temp['judicial'] <- ifelse(temp$state %in% judicial,1,0)
+temp['recourse'] <- ifelse(temp$state %in% nonrecourse,0,1)
+
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)")
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$judicial==0,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$judicial==1,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$recourse==0,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$recourse==1,])
+# felm_regs[[5]] <- felm(formula,data=temp[temp$recourse==1 & temp$judicial==0,])
+# felm_regs[[6]] <- felm(formula,data=temp[temp$recourse==0 & temp$judicial==1,])
+
+
+printtable(felm_regs,c("Non-judicial","Judicial","Non-recourse","Recourse","non-Jud, Rec","Jud, non-Rec"),"Default",note,"mtg30us",list(""))  
+```
+
+## Judicial, Recourse States (30% Negative Equity), 10-year T-bond Rate as Instrument
+
+```{r judicial_recourse_gs10}
+temp <- loan_data[loan_data$ne_cutoff==-0.3 ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","gs10"))
+judicial=c('CT','DE','FL','IL','IN','IA','KS','KY','LA','MA','MD','ME','NJ','NM','NY','ND','OH','OK','PA','SC','SD','VT','WI')
+nonrecourse=c('AK','AZ','CA','IA','MN','MT','NC','ND','OR','WA','WI')
+temp['judicial'] <- ifelse(temp$state %in% judicial,1,0)
+temp['recourse'] <- ifelse(temp$state %in% nonrecourse,0,1)
+
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~gs10)")
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$judicial==0,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$judicial==1,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$recourse==0,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$recourse==1,])
+# felm_regs[[5]] <- felm(formula,data=temp[temp$recourse==1 & temp$judicial==0,])
+# felm_regs[[6]] <- felm(formula,data=temp[temp$recourse==0 & temp$judicial==1,])
+
+
+printtable(felm_regs,c("Non-judicial","Judicial","Non-recourse","Recourse","non-Jud, Rec","Jud, non-Rec"),"Default",note,"mtg30us",list(""))  
+```
+
+
+## Negative Equity, 50-50 Split by rent-to-value, Benchmark Rate as Instrument
+```{r ne_rent_split_1}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+low <- c(1,2)
+high <- c(3,4)
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year")
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1 & temp$rent_quartiles %in% low,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1 & temp$rent_quartiles %in% high,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2 & temp$rent_quartiles %in% low,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2 & temp$rent_quartiles %in% high,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3 & temp$rent_quartiles %in% low,])
+felm_regs[[6]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3 & temp$rent_quartiles %in% high,])
+felm_regs[[7]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4 & temp$rent_quartiles %in% low,])
+felm_regs[[8]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4 & temp$rent_quartiles %in% high,])
+felm_regs[[9]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5 & temp$rent_quartiles %in% low,])
+felm_regs[[10]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5 & temp$rent_quartiles %in% high,])
+
+printtable(felm_regs,c("10% low rent","10% high rent","20% low rent","20% high rent","30% low rent","30% high rent","40% low rent","40% high rent","50% low rent","50% high rent"),"default",note,"mtg30us","")
+
+```
+
+<a href="#top">Back to top</a>
+
+## Negative Equity, 50-50 Split by rent-to-value, 10-year T-bond Rate as Instrument
+```{r ne_rent_split_1_gs10}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","gs10"))
+low <- c(1,2)
+high <- c(3,4)
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~gs10)|zip_year")
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1 & temp$rent_quartiles %in% low,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1 & temp$rent_quartiles %in% high,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2 & temp$rent_quartiles %in% low,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2 & temp$rent_quartiles %in% high,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3 & temp$rent_quartiles %in% low,])
+felm_regs[[6]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3 & temp$rent_quartiles %in% high,])
+felm_regs[[7]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4 & temp$rent_quartiles %in% low,])
+felm_regs[[8]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4 & temp$rent_quartiles %in% high,])
+felm_regs[[9]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5 & temp$rent_quartiles %in% low,])
+felm_regs[[10]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5 & temp$rent_quartiles %in% high,])
+
+printtable(felm_regs,c("10% low rent","10% high rent","20% low rent","20% high rent","30% low rent","30% high rent","40% low rent","40% high rent","50% low rent","50% high rent"),"default",note,"mtg30us","")
+
+```
+<a href="#top">Back to top</a>
+
+## Negative Equity, Prepayments IV Regressions, Benchmark Rate as Instrument
+
+```{r prepayment_iv_bm}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("prepaid","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("prepaid~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
+
+condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,c("10%","20%","30%","40%","50%"),"prepayment",note,"mtg30us",list(condf))
+
+```
+
+<a href="#top">Back to top</a>
+
+## Negative Equity, Prepayments IV Regressions, 10-year T-bond Rate as Instrument
+
+```{r prepayment_iv}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("prepaid","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","gs10"))
+
+formula <- as.formula("prepaid~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~gs10)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
+
+condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,c("10%","20%","30%","40%","50%"),"prepayment",note,"gs10",list(condf))
+
+```
+<a href="#top">Back to top</a>
+
+## Positive Equity: Prepayment IV Regressions
+```{r pos_eqt_prepay}
+temp <- loan_data_pe[loan_data_pe$ne_cutoff %in% c(0,0.1,0.3,0.5),]
+temp <- completeFun(temp,c("prepaid","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("prepaid~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==0 & is.finite(log(temp$upb)),])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==0.1 & is.finite(log(temp$upb)),])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==0.3 & is.finite(log(temp$upb)),])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==0.5 & is.finite(log(temp$upb)),])
+
+condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2))#,round(condfstat(felm_regs[[5]])[[1]],2))
+printtable(felm_regs,c("10","30","50"),"Prepaid",note,"mtg30us",list(condf))
+```
+
+<a href="#top">Back to top</a>
+
+# Figures
+
+## Non-parametric Evidence, Panel B - Nadaraya–Watson (30% Negative equity sample)
+
+* FE adjusted mortgage-to-value = mortgage-to-value - predicted mortgage-to-value from (mortgage-to-value~ zip * ne year + zip * org year)
+* Results are similar for other levels of negative equity
+
+```{r figure}
+library(np)
+temp <- loan_data[loan_data$ne_cutoff == -0.3,]
+temp <- completeFun(temp,c("mtg30us","mpay_value","zip_year","zip_orgyear","upb","fico","ltv","dti","def"))
+
+adj_interestrate <- felm(mpay_value~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+adj_mtg30us <- felm(mtg30us~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+temp['resid_interestrate'] <- adj_interestrate$residuals#floor(adj_mpay_value$residuals*100000)/100
+temp['resid_mtg30us'] <- adj_mtg30us$residuals#floor(adj_mtg30us$residuals*100)/100
+
+temp <- temp[temp$resid_interestrate <= quantile(temp$resid_interestrate,1,na.rm = TRUE) & temp$resid_interestrate >= quantile(temp$resid_interestrate,0.01,na.rm = TRUE),]
+
+adj_default <- felm(def~0|factor(zip_year)+factor(zip_orgyear),data=temp)
+temp['resid_default'] <- adj_default$residuals#  floor(adj_default$residuals*100)/100
+
+iv_effect <- lm(resid_interestrate~resid_mtg30us,data=temp)
+temp['iv_effect_on_interest'] <- predict(iv_effect)
+
+cor(temp$iv_effect_on_interest,temp$resid_default)
+
+# bw <- npregbw(formula=as.vector(temp$resid_default)~as.vector(temp$iv_effect_on_interest),bws=(max(temp$iv_effect_on_interest)-min(temp$iv_effect_on_interest))/10,bwtype="fixed",bandwidth.compute=F)
+# model <- npreg(bws=bw,gradients = TRUE)
+# plot.out <- plot(model, plot.errors.method="asymptotic",plot.errors.style="band",plot.behavior="data")
+# y.eval <- fitted(plot.out$r1)
+# x.eval <- plot.out$r1$eval[,1]#/10000+mean(loan_data[loan_data$ne_cutoff==-0.3,]$mpay_value,na.rm=TRUE)
+# y.se <- se(plot.out$r1)
+# y.lower.ci <- y.eval+y.se[,1]*1.96
+# y.upper.ci <- y.eval+y.se[,2]*1.96
+# df <- as.data.frame(cbind(x.eval,y.eval,y.lower.ci,y.upper.ci))
+# saveRDS(df,file="figure_panelA_jan1818.rds")
+
+df <- readRDS(file="figure_panelA_jan1818.rds")
+df$y.lower.ci <- NULL
+df$y.upper.ci <- NULL
+df$y.eval = df$y.eval+ mean(loan_data[loan_data$ne_cutoff==-0.3,]$def,na.rm=TRUE)
+#df$y.lower.ci = df$y.lower.ci+ mean(loan_data[loan_data$ne_cutoff==-0.3,]$def,na.rm=TRUE)
+#df$y.upper.ci = df$y.upper.ci+ mean(loan_data[loan_data$ne_cutoff==-0.3,]$def,na.rm=TRUE)
+df <- melt(df,id="x.eval")
+df$x.eval <- (df$x.eval - mean(df$x.eval))/sd(df$x.eval)
+df <- df[df$x.eval>-1 & df$x.eval<1,]
+g1 <-  ggplot(df,aes(x=x.eval, y=value,colour=variable)) + geom_line(aes(linetype=variable), size=1) +scale_linetype_manual(values = c(1,2,2))+scale_colour_manual(values=c("black","gray40","gray40"))+ theme_bw()+ylab("FE adjusted default rate") + xlab("IV effect on Interest Rate (Standardized)")+ labs(title = "")+ theme(legend.position="none")+ylim(0.05,0.06)#+scale_y_continuous(limits = c(0.05, 0.06))
+g1
+```
+
+<a href="#top">Back to top</a>
+
+
+## Non-parametric Evidence, Panel A - Nadaraya–Watson (30% Negative equity sample)
+```{r}
+# bw <- npregbw(formula=as.vector(temp$resid_interestrate)~as.vector(temp$resid_mtg30us),bws=(max(temp$resid_mtg30us)-min(temp$resid_mtg30us))/10,bwtype="fixed",bandwidth.compute=F)
+# model <- npreg(bws=bw,gradients = TRUE)
+# plot.out <- plot(model, plot.errors.method="asymptotic",plot.errors.style="band",plot.behavior="data")
+# y.eval <- fitted(plot.out$r1)
+# x.eval <- plot.out$r1$eval[,1]
+# y.se <- se(plot.out$r1)
+# y.lower.ci <- y.eval+1.96*y.se[,1]
+# y.upper.ci <- y.eval+1.96*y.se[,2]
+# df <- as.data.frame(cbind(x.eval,y.eval,y.lower.ci,y.upper.ci))
+# saveRDS(df,file="figure_panelB_jan1818.rds")
+
+df <- readRDS(file="figure_panelB_jan1818.rds")
+df$y.lower.ci <- NULL
+df$y.upper.ci <- NULL
+df <- melt(df,id="x.eval")
+df <- df[df$value>quantile(df$value,0.01,na.rm=TRUE) & df$value <quantile(df$value,0.99,na.rm=TRUE),]
+
+g2 <- ggplot(df,aes(x=x.eval, y=value,colour=variable)) + geom_line(aes(linetype=variable), size=1) +scale_linetype_manual(values = c(1,2,2))+scale_colour_manual(values=c("black","gray40","gray40"))+ theme_bw()+ylab("FE adjusted Interest Rate") + xlab("FE adjusted IV")+ labs(title = "")+ theme(legend.position="none")#+scale_y_continuous(limits = c(-3e-4, 5e-4))
+g2
+
+```
+
+
+<a href="#top">Back to top</a>
+
+
+
+
+## Main Result Graph
+```{r main_result_graph}
+equity <- c(-50,-40,-30,-20,-10,0,10,20,30,50)
+coef <- c(0.018,0.018,0.018,0.024,0.021,0.015,0.011,0.007,0.007,0.00003)
+se <- c(0.006,0.009,0.007,0.005,0.003,0.003,0.003,0.003,0.004,0.005)
+lb <- coef-se
+# lb[11] <- -5
+ub <- coef+se
+df <- as.data.frame(cbind(equity,coef,se))
+
+p<- ggplot(df, aes(x=equity, y=coef)) + geom_hline(yintercept = 0)+
+  geom_point()+geom_errorbar(aes(ymin=lb, ymax=ub), width=2,
+                 position=position_dodge(20))+ scale_x_continuous(breaks=equity)+ theme_bw()+ylab("Coefficient") + xlab("Equity (%)")+ annotate("rect",xmin=20, xmax=50, ymin=-0.005, ymax=0.03,alpha=0.2)
+p
+```
+
+<a href="#top">Back to top</a>
