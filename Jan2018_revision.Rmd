@@ -212,6 +212,7 @@ loan_data_pe <- rbind(loan_data_pe,readRDS(file="loan_data_pos_eqty_Jun072017_15
 cluster_by = "zip_year"
 
 note =c("Fixed Effects: zip x ne year, zip x org year","Standard Errors clustered by zip x ne year")
+note2 =c("Fixed Effects: zip x ne qt, zip x org qt","Standard Errors clustered by zip x ne qt")
 printtable <- function(reg,column.labels,depvar,note,iv,lines) {
   stargazer(reg,type=output.type,no.space = TRUE,omit.stat = c("f","rsq","ser"),notes= note,column.labels = column.labels, dep.var.labels = "",dep.var.caption   = paste("Y: ",gsub("_"," ",depvar),"; iv: ",gsub("_"," ",iv)),dep.var.labels.include = FALSE,add.lines = lines)
 }
@@ -766,3 +767,225 @@ p
 ```
 
 <a href="#top">Back to top</a>
+
+
+# Robustness
+
+
+## Split by price collapse size 1
+```{r}
+setwd(file_path)
+hpi <- read.csv(paste(file_path,"/Zip_Zhvi_SingleFamilyResidence.csv",sep=""))
+hpi <- data.frame(hpi[2], stack(hpi[8:ncol(hpi)]))
+names(hpi)<-c("zip","value","month")
+hpi$zip <- floor(hpi$zip/100)*100
+
+hpi <- ddply(hpi,.(zip,month),summarise,value=mean(value,na.rm=TRUE))
+hpi$month <- as.character(hpi$month)
+hpi$month <- as.Date(paste(substr(hpi$month,start = 2,stop=5),"-",substr(hpi$month,start = 7,stop=8),"-01",sep=""))
+hpi['year'] <- as.numeric(format(hpi$month,"%Y"))
+
+max20022008 <- ddply(hpi[hpi$year %in% 2002:2008,],.(zip),summarise,max_2002_2008 = max(value,na.rm = TRUE))
+min20082012 <- ddply(hpi[hpi$year %in% 2008:2012,],.(zip),summarise,min_2008_2012 = min(value,na.rm = TRUE))
+maxafter2010 <- ddply(hpi[hpi$year>=2010,],.(zip),summarise,max_after_2010 = max(value,na.rm = TRUE))
+
+hpi <- merge(max20022008,min20082012,by="zip")
+hpi <- merge(hpi,maxafter2010,by="zip")
+
+hpi <- hpi[hpi$zip %in% unique(loan_data$zip),]
+
+hpi['collapse'] <- log(hpi$min_2008_2012/hpi$max_2002_2008)
+hpi['recovery'] <- log(hpi$max_after_2010/hpi$min_2008_2012)
+
+hpi['collapse_q'] <- ntile(hpi$collapse,10)
+hpi['recovery_q'] <- ntile(hpi$recovery,10)
+
+hpi$max_2002_2008 <- NULL
+hpi$min_2008_2012 <- NULL
+hpi$max_after_2010 <- NULL
+
+
+
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+temp <- merge(temp,hpi,by="zip")
+temp$collapse_q <- ntile(temp$collapse,10)
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$collapse_q %in% c(1:5),])
+felm_regs[[2]] <- felm(formula,data=temp[temp$collapse_q %in% c(6:10),])
+
+# condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,c("Big Collapse (less than median)","Small Collapse (more than median)"),"default",note,"mtg30us",list("condf"))
+```
+
+
+## Split by time to reach ne cutoff
+```{r}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+temp['time_to_ne'] <- temp$ne_year - temp$org_year
+temp['time_to_ne_q'] <- ntile(temp$time_to_ne,10)
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$time_to_ne_q %in% 1:5,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$time_to_ne_q %in% 6:10,])
+
+
+# condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,c("Less than median (3)","More than median (3)"),"default",note,"mtg30us",list("condf"))
+```
+
+
+## Split by price change in the last 2 years before reaching ne threshold
+```{r}
+
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+setwd(file_path)
+hpi <- read.csv("Zip_Zhvi_SingleFamilyResidence.csv")
+hpi <- data.frame(hpi[2], stack(hpi[8:ncol(hpi)]))
+names(hpi)<-c("zip","value","month_2year")
+hpi$zip <- floor(hpi$zip/100)*100
+hpi$month_2year <- as.Date(paste(substr(hpi$month_2year,2,5),substr(hpi$month_2year,7,8),"01",sep = "-"))
+hpi$value <- as.double(hpi$value)
+hpi <- hpi[hpi$zip %in% unique(temp$zip),]
+hpi <- ddply(hpi,.(zip,month_2year),summarise,hpi_2year_before=median(value,na.rm = TRUE))
+
+
+
+
+
+temp['month_2year'] <- as.Date(paste((temp$ne_year-2),"-",as.numeric(format(temp$current_date,"%m")),"-01",sep=""))
+temp <- merge(temp,hpi,by=c("zip","month_2year"))
+temp['price_change_2year'] <- log(temp$current_hpi/temp$hpi_2year_before)
+temp['price_change_2year_q'] <- ntile(temp$price_change_2year,10)
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$price_change_2year_q %in% 1:5,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$price_change_2year_q %in% 6:10,])
+
+printtable(felm_regs,c("Less than median (-0.32)","More than median (-0.32)"),"default",note,"mtg30us",list("condf"))
+```
+
+
+ 
+## 3 Digit zip codes with similar price movements across 5-digit zip codes in 2008 - 2012
+```{r}
+
+setwd(file_path)
+hpi <- read.csv(paste(file_path,"/Zip_Zhvi_SingleFamilyResidence.csv",sep=""))
+hpi <- data.frame(hpi[2], stack(hpi[8:ncol(hpi)]))
+names(hpi)<-c("zip","value","month")
+hpi$zip3 <- floor(hpi$zip/100)*100
+hpi$month <- as.Date(paste(substr(hpi$month,start = 2,stop=5),"-",substr(hpi$month,start = 7,stop=8),"-01",sep=""))
+hpi['year'] <- as.numeric(format(hpi$month,"%Y"))
+
+hpi <- hpi[hpi$year %in% 2008:2012,]
+
+zip3 <- unique(hpi$zip3)
+corr_summary <- NULL
+
+for(z3 in zip3) {
+  temp <- hpi[hpi$zip3 == z3,]
+  temp <- temp[!is.na(temp$value),]
+  temp$zip3 <- NULL
+  temp$year <- NULL
+  temp <- reshape(temp,idvar = "month",timevar = "zip",direction = "wide")
+  temp$month <- NULL
+  temp <- cor(temp)
+  temp <- as.matrix(temp)
+  temp <- temp[upper.tri(temp,diag = FALSE)]
+  cor_sum <- c(z3,mean(temp,na.rm=TRUE),sd(temp,na.rm=TRUE),median(temp,na.rm=TRUE),quantile(temp,0.1,na.rm = TRUE),quantile(temp,0.25,na.rm = TRUE),quantile(temp,0.75,na.rm = TRUE))
+  corr_summary <- rbind(corr_summary,cor_sum)
+}
+corr_summary <- as.data.frame(corr_summary)
+names(corr_summary) <- c("zip","corr_mean","corr_sd","corr_median","corr_d1","corr_q1","corr_q3")
+
+
+
+
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+temp <- merge(temp,corr_summary,by="zip")
+# temp$collapse_q <- ntile(temp$collapse,10)
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$corr_d1 >0.9,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$corr_q1 >0.9,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$corr_median >0.9,])
+
+# condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,c("p10 > 0.9","p25 > 0.9","Median > 0.9"),"default",note,"mtg30us",list("condf"))
+```
+
+
+
+
+## Negative Equity, Default IV Regressions, Benchmark Rate as Instrument, Quarterly Fixed Effects
+```{r}
+
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+temp['org_qt'] <- ceiling(as.numeric(format(temp$orgdate,"%m"))/3)
+temp['ne_eq_qt'] <- ceiling(as.numeric(format(temp$current_date,"%m"))/3)
+
+temp['zip_org_qt'] <- paste(temp$zip,temp$org_qt)
+temp['zip_ne_eq_qt'] <- paste(temp$zip,temp$ne_eq_qt)
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_ne_eq_qt)+factor(zip_org_qt)|(interestrate~mtg30us)|zip_ne_eq_qt")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
+
+condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,"","default",note2,"mtg30us",list(condf))
+```
+
+## Negative Equity, Default IV Regressions, 10-year T-bond Rate as Instrument, Quarterly Fixed Effectss
+```{r}
+
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1,-0.2,-0.3,-0.4,-0.5) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","gs10"))
+
+temp['org_qt'] <- ceiling(as.numeric(format(temp$orgdate,"%m"))/3)
+temp['ne_eq_qt'] <- ceiling(as.numeric(format(temp$current_date,"%m"))/3)
+
+temp['zip_org_qt'] <- paste(temp$zip,temp$org_qt)
+temp['zip_ne_eq_qt'] <- paste(temp$zip,temp$ne_eq_qt)
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_ne_eq_qt)+factor(zip_org_qt)|(interestrate~gs10)|zip_ne_eq_qt")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$ne_cutoff==-0.1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$ne_cutoff==-0.2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$ne_cutoff==-0.3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$ne_cutoff==-0.4,])
+felm_regs[[5]] <- felm(formula,data=temp[temp$ne_cutoff==-0.5,])
+
+condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,"","default",note2,"gs10",list(condf))
+```
