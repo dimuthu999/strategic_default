@@ -772,7 +772,59 @@ p
 # Robustness
 
 
-## Split by price collapse size 1
+## Split by price collapse size 1 (10% NE)
+```{r}
+setwd(file_path)
+hpi <- read.csv(paste(file_path,"/Zip_Zhvi_SingleFamilyResidence.csv",sep=""))
+hpi <- data.frame(hpi[2], stack(hpi[8:ncol(hpi)]))
+names(hpi)<-c("zip","value","month")
+hpi$zip <- floor(hpi$zip/100)*100
+
+hpi <- ddply(hpi,.(zip,month),summarise,value=mean(value,na.rm=TRUE))
+hpi$month <- as.character(hpi$month)
+hpi$month <- as.Date(paste(substr(hpi$month,start = 2,stop=5),"-",substr(hpi$month,start = 7,stop=8),"-01",sep=""))
+hpi['year'] <- as.numeric(format(hpi$month,"%Y"))
+
+max20022008 <- ddply(hpi[hpi$year %in% 2002:2008,],.(zip),summarise,max_2002_2008 = max(value,na.rm = TRUE))
+min20082012 <- ddply(hpi[hpi$year %in% 2008:2012,],.(zip),summarise,min_2008_2012 = min(value,na.rm = TRUE))
+maxafter2010 <- ddply(hpi[hpi$year>=2010,],.(zip),summarise,max_after_2010 = max(value,na.rm = TRUE))
+
+hpi <- merge(max20022008,min20082012,by="zip")
+hpi <- merge(hpi,maxafter2010,by="zip")
+
+hpi <- hpi[hpi$zip %in% unique(loan_data$zip),]
+
+hpi['collapse'] <- log(hpi$min_2008_2012/hpi$max_2002_2008)
+hpi['recovery'] <- log(hpi$max_after_2010/hpi$min_2008_2012)
+
+hpi['collapse_q'] <- ntile(hpi$collapse,10)
+hpi['recovery_q'] <- ntile(hpi$recovery,10)
+
+hpi$max_2002_2008 <- NULL
+hpi$min_2008_2012 <- NULL
+hpi$max_after_2010 <- NULL
+
+
+
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+temp <- merge(temp,hpi,by="zip")
+temp$collapse_q <- ntile(temp$collapse,10)
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$collapse_q %in% c(1:5),])
+felm_regs[[2]] <- felm(formula,data=temp[temp$collapse_q %in% c(6:10),])
+
+# condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,c("Big Collapse (less than median)","Small Collapse (more than median)"),"default",note,"mtg30us",list("condf"))
+```
+
+
+## Split by price collapse size 1 (30% NE)
 ```{r}
 setwd(file_path)
 hpi <- read.csv(paste(file_path,"/Zip_Zhvi_SingleFamilyResidence.csv",sep=""))
@@ -882,7 +934,7 @@ printtable(felm_regs,c("Less than median (-0.32)","More than median (-0.32)"),"d
 
 
  
-## 3 Digit zip codes with similar price movements across 5-digit zip codes in 2008 - 2012
+## 3 Digit zip codes with similar price movements across 5-digit zip codes in 2008 - 2012 (30% NE)
 ```{r}
 
 setwd(file_path)
@@ -927,14 +979,37 @@ formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_org
 
 felm_regs <- list()
 felm_regs[[1]] <- felm(formula,data=temp[temp$corr_d1 >0.9,])
-felm_regs[[2]] <- felm(formula,data=temp[temp$corr_q1 >0.9,])
-felm_regs[[3]] <- felm(formula,data=temp[temp$corr_median >0.9,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$corr_q1 >0.9 & temp$corr_d1<=0.9,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$corr_median >0.9 & temp$corr_q1 <=0.9,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$corr_median  <=0.9,])
 
 # condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
 
-printtable(felm_regs,c("p10 > 0.9","p25 > 0.9","Median > 0.9"),"default",note,"mtg30us",list("condf"))
+printtable(felm_regs,c("p10>0.9","p25>0.9 and p10<=0.9","p50>0.9 and p25<=0.9","p50<=0.9"),"default",note,"mtg30us",list("condf"))
 ```
 
+## 3 Digit zip codes with similar price movements across 5-digit zip codes in 2008 - 2012 (10% NE)
+```{r}
+
+
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+temp <- merge(temp,corr_summary,by="zip")
+# temp$collapse_q <- ntile(temp$collapse,10)
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)|zip_year")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$corr_d1 >0.9,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$corr_q1 >0.9 & temp$corr_d1<=0.9,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$corr_median >0.9 & temp$corr_q1 <=0.9,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$corr_median  <=0.9,])
+
+# condf <- c("Cond. F. Stat",round(condfstat(felm_regs[[1]])[[1]],2),round(condfstat(felm_regs[[2]])[[1]],2),round(condfstat(felm_regs[[3]])[[1]],2),round(condfstat(felm_regs[[4]])[[1]],2),round(condfstat(felm_regs[[5]])[[1]],2))
+
+printtable(felm_regs,c("p10>0.9","p25>0.9 and p10<=0.9","p50>0.9 and p25<=0.9","p50<=0.9"),"default",note,"mtg30us",list("condf"))
+```
 
 
 

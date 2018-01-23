@@ -151,12 +151,14 @@ $(document).ready(function () {
 <li><a href="#main-result-graph"><span class="toc-section-number">2.3</span> Main Result Graph</a></li>
 </ul></li>
 <li><a href="#robustness"><span class="toc-section-number">3</span> Robustness</a><ul>
-<li><a href="#split-by-price-collapse-size-1"><span class="toc-section-number">3.1</span> Split by price collapse size 1</a></li>
-<li><a href="#split-by-time-to-reach-ne-cutoff"><span class="toc-section-number">3.2</span> Split by time to reach ne cutoff</a></li>
-<li><a href="#split-by-price-change-in-the-last-2-years-before-reaching-ne-threshold"><span class="toc-section-number">3.3</span> Split by price change in the last 2 years before reaching ne threshold</a></li>
-<li><a href="#digit-zip-codes-with-similar-price-movements-across-5-digit-zip-codes-in-2008---2012"><span class="toc-section-number">3.4</span> 3 Digit zip codes with similar price movements across 5-digit zip codes in 2008 - 2012</a></li>
-<li><a href="#negative-equity-default-iv-regressions-benchmark-rate-as-instrument-quarterly-fixed-effects"><span class="toc-section-number">3.5</span> Negative Equity, Default IV Regressions, Benchmark Rate as Instrument, Quarterly Fixed Effects</a></li>
-<li><a href="#negative-equity-default-iv-regressions-10-year-t-bond-rate-as-instrument-quarterly-fixed-effectss"><span class="toc-section-number">3.6</span> Negative Equity, Default IV Regressions, 10-year T-bond Rate as Instrument, Quarterly Fixed Effectss</a></li>
+<li><a href="#split-by-price-collapse-size-1-10-ne"><span class="toc-section-number">3.1</span> Split by price collapse size 1 (10% NE)</a></li>
+<li><a href="#split-by-price-collapse-size-1-30-ne"><span class="toc-section-number">3.2</span> Split by price collapse size 1 (30% NE)</a></li>
+<li><a href="#split-by-time-to-reach-ne-cutoff"><span class="toc-section-number">3.3</span> Split by time to reach ne cutoff</a></li>
+<li><a href="#split-by-price-change-in-the-last-2-years-before-reaching-ne-threshold"><span class="toc-section-number">3.4</span> Split by price change in the last 2 years before reaching ne threshold</a></li>
+<li><a href="#digit-zip-codes-with-similar-price-movements-across-5-digit-zip-codes-in-2008---2012-30-ne"><span class="toc-section-number">3.5</span> 3 Digit zip codes with similar price movements across 5-digit zip codes in 2008 - 2012 (30% NE)</a></li>
+<li><a href="#digit-zip-codes-with-similar-price-movements-across-5-digit-zip-codes-in-2008---2012-10-ne"><span class="toc-section-number">3.6</span> 3 Digit zip codes with similar price movements across 5-digit zip codes in 2008 - 2012 (10% NE)</a></li>
+<li><a href="#negative-equity-default-iv-regressions-benchmark-rate-as-instrument-quarterly-fixed-effects"><span class="toc-section-number">3.7</span> Negative Equity, Default IV Regressions, Benchmark Rate as Instrument, Quarterly Fixed Effects</a></li>
+<li><a href="#negative-equity-default-iv-regressions-10-year-t-bond-rate-as-instrument-quarterly-fixed-effectss"><span class="toc-section-number">3.8</span> Negative Equity, Default IV Regressions, 10-year T-bond Rate as Instrument, Quarterly Fixed Effectss</a></li>
 </ul></li>
 </ul>
 </div>
@@ -787,8 +789,36 @@ body{
 </div>
 <div id="robustness" class="section level1">
 <h1><span class="header-section-number">3</span> Robustness</h1>
-<div id="split-by-price-collapse-size-1" class="section level2">
-<h2><span class="header-section-number">3.1</span> Split by price collapse size 1</h2>
+<div id="split-by-price-collapse-size-1-10-ne" class="section level2">
+<h2><span class="header-section-number">3.1</span> Split by price collapse size 1 (10% NE)</h2>
+<pre><code>## 
+## =====================================================================================
+##                                         Y: default ; iv: mtg30us                     
+##                     -----------------------------------------------------------------
+##                     Big Collapse (less than median) Small Collapse (more than median)
+##                                   (1)                              (2)               
+## -------------------------------------------------------------------------------------
+## fico                          -0.0003***                       -0.0004***            
+##                                (0.00002)                        (0.00002)            
+## ltv                            0.004***                         0.009***             
+##                                (0.0004)                          (0.001)             
+## log(upb)                        0.004*                          -0.006**             
+##                                 (0.002)                          (0.003)             
+## dti                            0.001***                         0.001***             
+##                                (0.0001)                         (0.0001)             
+## `interestrate(fit)`            0.024***                         0.018***             
+##                                 (0.005)                          (0.005)             
+## -------------------------------------------------------------------------------------
+## condf                                                                                
+## Observations                    67,696                           67,515              
+## Adjusted R2                      0.067                            0.113              
+## =====================================================================================
+## Note:                                                     *p&lt;0.1; **p&lt;0.05; ***p&lt;0.01
+##                                          Fixed Effects: zip x ne year, zip x org year
+##                                            Standard Errors clustered by zip x ne year</code></pre>
+</div>
+<div id="split-by-price-collapse-size-1-30-ne" class="section level2">
+<h2><span class="header-section-number">3.2</span> Split by price collapse size 1 (30% NE)</h2>
 <pre><code>## 
 ## =====================================================================================
 ##                                         Y: default ; iv: mtg30us                     
@@ -816,7 +846,7 @@ body{
 ##                                            Standard Errors clustered by zip x ne year</code></pre>
 </div>
 <div id="split-by-time-to-reach-ne-cutoff" class="section level2">
-<h2><span class="header-section-number">3.2</span> Split by time to reach ne cutoff</h2>
+<h2><span class="header-section-number">3.3</span> Split by time to reach ne cutoff</h2>
 <pre><code>## 
 ## =================================================================
 ##                               Y: default ; iv: mtg30us           
@@ -844,7 +874,7 @@ body{
 ##                        Standard Errors clustered by zip x ne year</code></pre>
 </div>
 <div id="split-by-price-change-in-the-last-2-years-before-reaching-ne-threshold" class="section level2">
-<h2><span class="header-section-number">3.3</span> Split by price change in the last 2 years before reaching ne threshold</h2>
+<h2><span class="header-section-number">3.4</span> Split by price change in the last 2 years before reaching ne threshold</h2>
 <pre><code>## 
 ## =====================================================================
 ##                                 Y: default ; iv: mtg30us             
@@ -871,36 +901,64 @@ body{
 ##                          Fixed Effects: zip x ne year, zip x org year
 ##                            Standard Errors clustered by zip x ne year</code></pre>
 </div>
-<div id="digit-zip-codes-with-similar-price-movements-across-5-digit-zip-codes-in-2008---2012" class="section level2">
-<h2><span class="header-section-number">3.4</span> 3 Digit zip codes with similar price movements across 5-digit zip codes in 2008 - 2012</h2>
+<div id="digit-zip-codes-with-similar-price-movements-across-5-digit-zip-codes-in-2008---2012-30-ne" class="section level2">
+<h2><span class="header-section-number">3.5</span> 3 Digit zip codes with similar price movements across 5-digit zip codes in 2008 - 2012 (30% NE)</h2>
 <pre><code>## 
-## ==================================================================
-##                                Y: default ; iv: mtg30us           
-##                     ----------------------------------------------
-##                        p10 &gt; 0.9       p25 &gt; 0.9     Median &gt; 0.9 
-##                           (1)             (2)            (3)      
-## ------------------------------------------------------------------
-## fico                  -0.0004***      -0.0004***      -0.0004***  
-##                        (0.00004)       (0.00003)      (0.00003)   
-## ltv                    0.006***        0.005***        0.005***   
-##                         (0.001)         (0.001)        (0.001)    
-## log(upb)                0.016**         0.011**         0.006     
-##                         (0.007)         (0.005)        (0.004)    
-## dti                    0.001***        0.001***        0.001***   
-##                        (0.0002)        (0.0002)        (0.0001)   
-## `interestrate(fit)`    0.030***         0.022**        0.018**    
-##                         (0.011)         (0.009)        (0.008)    
-## ------------------------------------------------------------------
-## condf                                                             
-## Observations            15,777          26,631          37,081    
-## Adjusted R2              0.065           0.078          0.075     
-## ==================================================================
-## Note:                                  *p&lt;0.1; **p&lt;0.05; ***p&lt;0.01
-##                       Fixed Effects: zip x ne year, zip x org year
-##                         Standard Errors clustered by zip x ne year</code></pre>
+## ===================================================================================
+##                                        Y: default ; iv: mtg30us                    
+##                     ---------------------------------------------------------------
+##                      p10&gt;0.9   p25&gt;0.9 and p10&lt;=0.9 p50&gt;0.9 and p25&lt;=0.9  p50&lt;=0.9 
+##                        (1)             (2)                  (3)             (4)    
+## -----------------------------------------------------------------------------------
+## fico                -0.0004***      -0.0005***           -0.0004***      -0.0003***
+##                     (0.00004)        (0.0001)             (0.0001)        (0.0001) 
+## ltv                  0.006***        0.005***             0.005***        0.003*** 
+##                      (0.001)         (0.001)              (0.001)         (0.001)  
+## log(upb)             0.016**          0.003                -0.004          -0.011  
+##                      (0.007)         (0.007)              (0.008)         (0.007)  
+## dti                  0.001***        0.001**              0.0005**        0.0003*  
+##                      (0.0002)        (0.0002)             (0.0002)        (0.0002) 
+## `interestrate(fit)`  0.030***         0.011                0.009           0.015*  
+##                      (0.011)         (0.016)              (0.013)         (0.008)  
+## -----------------------------------------------------------------------------------
+## condf                                                                              
+## Observations          15,777          10,854               10,450          6,872   
+## Adjusted R2           0.065           0.098                0.065           0.151   
+## ===================================================================================
+## Note:                                                   *p&lt;0.1; **p&lt;0.05; ***p&lt;0.01
+##                                        Fixed Effects: zip x ne year, zip x org year
+##                                          Standard Errors clustered by zip x ne year</code></pre>
+</div>
+<div id="digit-zip-codes-with-similar-price-movements-across-5-digit-zip-codes-in-2008---2012-10-ne" class="section level2">
+<h2><span class="header-section-number">3.6</span> 3 Digit zip codes with similar price movements across 5-digit zip codes in 2008 - 2012 (10% NE)</h2>
+<pre><code>## 
+## ===================================================================================
+##                                        Y: default ; iv: mtg30us                    
+##                     ---------------------------------------------------------------
+##                      p10&gt;0.9   p25&gt;0.9 and p10&lt;=0.9 p50&gt;0.9 and p25&lt;=0.9  p50&lt;=0.9 
+##                        (1)             (2)                  (3)             (4)    
+## -----------------------------------------------------------------------------------
+## fico                -0.0003***      -0.0004***           -0.0004***      -0.0003***
+##                     (0.00003)       (0.00004)            (0.00003)       (0.00003) 
+## ltv                  0.005***        0.005***             0.005***        0.004*** 
+##                      (0.001)         (0.001)              (0.001)         (0.001)  
+## log(upb)              0.003           0.003                -0.004         -0.005*  
+##                      (0.004)         (0.005)              (0.003)         (0.003)  
+## dti                  0.001***        0.001***             0.001***        0.001*** 
+##                      (0.0001)        (0.0001)             (0.0001)        (0.0001) 
+## `interestrate(fit)`  0.035***        0.020**              0.021***         0.009*  
+##                      (0.007)         (0.009)              (0.006)         (0.006)  
+## -----------------------------------------------------------------------------------
+## condf                                                                              
+## Observations          32,003          29,743               35,327          36,932  
+## Adjusted R2           0.062           0.090                0.072           0.138   
+## ===================================================================================
+## Note:                                                   *p&lt;0.1; **p&lt;0.05; ***p&lt;0.01
+##                                        Fixed Effects: zip x ne year, zip x org year
+##                                          Standard Errors clustered by zip x ne year</code></pre>
 </div>
 <div id="negative-equity-default-iv-regressions-benchmark-rate-as-instrument-quarterly-fixed-effects" class="section level2">
-<h2><span class="header-section-number">3.5</span> Negative Equity, Default IV Regressions, Benchmark Rate as Instrument, Quarterly Fixed Effects</h2>
+<h2><span class="header-section-number">3.7</span> Negative Equity, Default IV Regressions, Benchmark Rate as Instrument, Quarterly Fixed Effects</h2>
 <pre><code>## 
 ## ==========================================================================
 ##                                    Y: default ; iv: mtg30us               
@@ -928,7 +986,7 @@ body{
 ##                                   Standard Errors clustered by zip x ne qt</code></pre>
 </div>
 <div id="negative-equity-default-iv-regressions-10-year-t-bond-rate-as-instrument-quarterly-fixed-effectss" class="section level2">
-<h2><span class="header-section-number">3.6</span> Negative Equity, Default IV Regressions, 10-year T-bond Rate as Instrument, Quarterly Fixed Effectss</h2>
+<h2><span class="header-section-number">3.8</span> Negative Equity, Default IV Regressions, 10-year T-bond Rate as Instrument, Quarterly Fixed Effectss</h2>
 <pre><code>## 
 ## ==========================================================================
 ##                                     Y: default ; iv: gs10                 
