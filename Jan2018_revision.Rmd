@@ -456,8 +456,85 @@ stargazer(felm_regs,type = output.type,no.space = TRUE,column.labels = gsub("_",
 
 
 ## Split by FICO (30% NE Sample), Benchmark Rate as Instrument
+### 10%
 ```{r fico_split}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.1) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$fico_cat==1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$fico_cat==2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$fico_cat==3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$fico_cat==4,])
+
+
+printtable(felm_regs,c("Q1 - 662","Q2 - 712","Q3 - 752","Q4 - 787"),"default",note,"mtg30us",list(""))
+
+```
+
+### 20%
+```{r fico_split2}
 temp <- loan_data[loan_data$ne_cutoff %in% c(-0.2) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$fico_cat==1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$fico_cat==2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$fico_cat==3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$fico_cat==4,])
+
+
+printtable(felm_regs,c("Q1 - 662","Q2 - 712","Q3 - 752","Q4 - 787"),"default",note,"mtg30us",list(""))
+
+```
+
+### 30%
+```{r fico_split3}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.3) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$fico_cat==1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$fico_cat==2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$fico_cat==3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$fico_cat==4,])
+
+
+printtable(felm_regs,c("Q1 - 662","Q2 - 712","Q3 - 752","Q4 - 787"),"default",note,"mtg30us",list(""))
+
+```
+
+### 40%
+```{r fico_split4}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.4) ,]
+temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
+
+formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)")
+
+
+felm_regs <- list()
+felm_regs[[1]] <- felm(formula,data=temp[temp$fico_cat==1,])
+felm_regs[[2]] <- felm(formula,data=temp[temp$fico_cat==2,])
+felm_regs[[3]] <- felm(formula,data=temp[temp$fico_cat==3,])
+felm_regs[[4]] <- felm(formula,data=temp[temp$fico_cat==4,])
+
+
+printtable(felm_regs,c("Q1 - 662","Q2 - 712","Q3 - 752","Q4 - 787"),"default",note,"mtg30us",list(""))
+
+```
+
+### 50%
+```{r fico_split5}
+temp <- loan_data[loan_data$ne_cutoff %in% c(-0.5) ,]
 temp <- completeFun(temp,c("def","interestrate","fico","ltv","dti","upb","zip_year","zip_orgyear","mtg30us"))
 
 formula <- as.formula("def~fico+ltv+log(upb)+dti|factor(zip_year)+factor(zip_orgyear)|(interestrate~mtg30us)")
@@ -711,9 +788,14 @@ df$y.eval = df$y.eval+ mean(loan_data[loan_data$ne_cutoff==-0.3,]$def,na.rm=TRUE
 #df$y.lower.ci = df$y.lower.ci+ mean(loan_data[loan_data$ne_cutoff==-0.3,]$def,na.rm=TRUE)
 #df$y.upper.ci = df$y.upper.ci+ mean(loan_data[loan_data$ne_cutoff==-0.3,]$def,na.rm=TRUE)
 df <- melt(df,id="x.eval")
+sd = sd(df$x.eval)
+mean = mean(df$x.eval)
+
 df$x.eval <- (df$x.eval - mean(df$x.eval))/sd(df$x.eval)
-df <- df[df$x.eval>-1 & df$x.eval<1,]
-g1 <-  ggplot(df,aes(x=x.eval, y=value,colour=variable)) + geom_line(aes(linetype=variable), size=1) +scale_linetype_manual(values = c(1,2,2))+scale_colour_manual(values=c("black","gray40","gray40"))+ theme_bw()+ylab("FE adjusted default rate") + xlab("IV effect on Interest Rate (Standardized)")+ labs(title = "")+ theme(legend.position="none")+ylim(0.05,0.06)#+scale_y_continuous(limits = c(0.05, 0.06))
+
+df <- df[df$x.eval>-1.2 & df$x.eval<1.2,]
+df$x.eval <- df$x.eval*sd + mean
+g1 <-  ggplot(df,aes(x=x.eval, y=value,colour=variable)) + geom_line(aes(linetype=variable), size=1) +scale_linetype_manual(values = c(1,2,2))+scale_colour_manual(values=c("black","gray40","gray40"))+ theme_bw()+ylab("FE adjusted default rate") + xlab("IV effect on Interest Rate")+ labs(title = "")+ theme(legend.position="none")+ylim(0.05,0.06)#+scale_y_continuous(limits = c(0.05, 0.06))
 g1
 ```
 
@@ -754,7 +836,7 @@ g2
 ```{r main_result_graph}
 equity <- c(-50,-40,-30,-20,-10,0,10,20,30,50)
 coef <- c(0.018,0.018,0.018,0.024,0.021,0.015,0.011,0.007,0.007,0.00003)
-se <- c(0.006,0.009,0.007,0.005,0.003,0.003,0.003,0.003,0.004,0.005)
+se <- c(0.006,0.009,0.007,0.005,0.003,0.003,0.003,0.003,0.004,0.005)*1.96
 lb <- coef-se
 # lb[11] <- -5
 ub <- coef+se
